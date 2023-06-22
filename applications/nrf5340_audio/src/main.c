@@ -25,6 +25,7 @@
 #include "audio_system.h"
 #include "channel_assignment.h"
 #include "streamctrl.h"
+#include "audio_wav.h"
 
 #if defined(CONFIG_AUDIO_DFU_ENABLE)
 #include "dfu_entry.h"
@@ -158,6 +159,8 @@ void on_ble_core_ready(void)
 	}
 }
 
+
+
 void main(void)
 {
 	int ret;
@@ -202,25 +205,37 @@ void main(void)
 	dfu_entry_check();
 #endif
 
-	/* Initialize BLE, with callback for when BLE is ready */
-	ret = ble_core_init(on_ble_core_ready);
+	// /* Initialize BLE, with callback for when BLE is ready */
+	// ret = ble_core_init(on_ble_core_ready);
+	// ERR_CHK(ret);
+
+	// /* Wait until ble_core/NET core is ready */
+	// while (!(bool)atomic_get(&ble_core_is_ready)) {
+	// 	(void)k_sleep(K_MSEC(100));
+	// }
+
+	// ret = leds_set();
+	// ERR_CHK(ret);
+
+	// audio_system_init();
+
+	// ret = streamctrl_start();
+	// ERR_CHK(ret);
+
+	// while (1) {
+	// 	streamctrl_event_handler();
+	// 	STACK_USAGE_PRINT("main", &z_main_thread);
+	// }
+	audio_i2s_blk_comp_cb_register(i2s_callback);
+	audio_i2s_init();
+
+	ret = hw_codec_init();
 	ERR_CHK(ret);
+	hw_codec_default_conf_enable();
+	hw_codec_volume_set(100);
 
-	/* Wait until ble_core/NET core is ready */
-	while (!(bool)atomic_get(&ble_core_is_ready)) {
-		(void)k_sleep(K_MSEC(100));
-	}
-
-	ret = leds_set();
-	ERR_CHK(ret);
-
-	audio_system_init();
-
-	ret = streamctrl_start();
-	ERR_CHK(ret);
-
-	while (1) {
-		streamctrl_event_handler();
-		STACK_USAGE_PRINT("main", &z_main_thread);
-	}
+	// LOG_INF("SD transfer size %i, total buffer size %i", SD_CARD_TRANSFER_SIZE, SOUND_BUF_SIZE);
+	
+	// Play test file from SD card
+	play_file_from_sd("C4_30s_48_stereo.wav");
 }

@@ -60,4 +60,8 @@ int sd_card_read(char const *const filename, char *const data, size_t *size);
  */
 int sd_card_init(void);
 
+int sd_card_segment_read_open(char const *const filename);
+int sd_card_segment_read(char *const data, size_t *size);
+int sd_card_segment_read_close(void);
+
 #endif /* _SD_CARD_H_ */
