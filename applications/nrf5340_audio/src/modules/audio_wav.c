@@ -7,8 +7,8 @@
 #include <zephyr/logging/log.h>
 
 
-
-#define I2S_16BIT_SAMPLE_NUM (I2S_SAMPLES_NUM*2)
+#define I2S_SAMPLES_BITS (I2S_SAMPLES_NUM)
+#define I2S_16BIT_SAMPLE_NUM (I2S_SAMPLES_BITS*2)
 #define I2S_BUF_BYTES		 (I2S_16BIT_SAMPLE_NUM * 2)
 #define SOUND_BUF_SIZE (I2S_16BIT_SAMPLE_NUM * 2 * 4)
 #define SD_CARD_TRANSFER_SIZE (SOUND_BUF_SIZE / 2)
@@ -62,12 +62,19 @@ int play_file_from_sd(const char *filename)
 	audio_i2s_set_next_buf((const uint8_t *)m_i2s_tx_buf_b, (uint32_t *)m_i2s_rx_buf_b);	
 	printk("Start of play_file func 2\n");
 
-
+	int count = 0;
+	uint32_t last_uptime = k_uptime_get_32();
+	uint32_t last_uptime_init = k_uptime_get_32();
 	while(1) {
 		// Wait for the load from SD semaphore to be set, signalling that the ringbuffer is half empty
-		printk("In while loop\n");
+		uint32_t current_uptime = k_uptime_get_32();
+		uint32_t delta_uptime = current_uptime - last_uptime;
+		last_uptime = current_uptime;
+		printk("%d:\t%d\n", ++count, delta_uptime);
 
 		k_sem_take(&m_sem_load_from_sd, K_FOREVER);
+		printk("%d:\t%d\n", ++count, delta_uptime);
+
 		
 		// Move data from the SD card to the buffer, one half at the time
 		if (sd_card_to_buffer(SD_CARD_TRANSFER_SIZE) < SD_CARD_TRANSFER_SIZE) {
@@ -79,7 +86,11 @@ int play_file_from_sd(const char *filename)
 		}
 	}
 
+	uint32_t time_usage = k_uptime_get_32()-last_uptime_init;
+
+
 	printk("Stopping I2S\n");
+	printk("Time usage:\t%d\n", time_usage);
 
 	audio_i2s_stop();
 

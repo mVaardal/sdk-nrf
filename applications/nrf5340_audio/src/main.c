@@ -26,6 +26,10 @@
 #include "channel_assignment.h"
 #include "streamctrl.h"
 #include "audio_wav.h"
+#include "audio_i2s.h"
+#include "hw_codec.h"
+#include <zephyr/sys/ring_buffer.h>
+
 
 #if defined(CONFIG_AUDIO_DFU_ENABLE)
 #include "dfu_entry.h"
@@ -114,35 +118,35 @@ static int bonding_clear_check(void)
 	return 0;
 }
 
-static int channel_assign_check(void)
-{
-#if (CONFIG_AUDIO_DEV == HEADSET) && CONFIG_AUDIO_HEADSET_CHANNEL_RUNTIME
-	int ret;
-	bool pressed;
+// static int channel_assign_check(void)
+// {
+// #if (CONFIG_AUDIO_DEV == HEADSET) && CONFIG_AUDIO_HEADSET_CHANNEL_RUNTIME
+// 	int ret;
+// 	bool pressed;
 
-	ret = button_pressed(BUTTON_VOLUME_DOWN, &pressed);
-	if (ret) {
-		return ret;
-	}
+// 	ret = button_pressed(BUTTON_VOLUME_DOWN, &pressed);
+// 	if (ret) {
+// 		return ret;
+// 	}
 
-	if (pressed) {
-		channel_assignment_set(AUDIO_CH_L);
-		return 0;
-	}
+// 	if (pressed) {
+// 		channel_assignment_set(AUDIO_CH_L);
+// 		return 0;
+// 	}
 
-	ret = button_pressed(BUTTON_VOLUME_UP, &pressed);
-	if (ret) {
-		return ret;
-	}
+// 	ret = button_pressed(BUTTON_VOLUME_UP, &pressed);
+// 	if (ret) {
+// 		return ret;
+// 	}
 
-	if (pressed) {
-		channel_assignment_set(AUDIO_CH_R);
-		return 0;
-	}
-#endif
+// 	if (pressed) {
+// 		channel_assignment_set(AUDIO_CH_R);
+// 		return 0;
+// 	}
+// #endif
 
-	return 0;
-}
+// 	return 0;
+// }
 
 /* Callback from ble_core when the ble subsystem is ready */
 void on_ble_core_ready(void)
@@ -176,10 +180,12 @@ void main(void)
 	ret = button_handler_init();
 	ERR_CHK(ret);
 
+#if 0
 	channel_assignment_init();
 
 	ret = channel_assign_check();
 	ERR_CHK(ret);
+#endif
 
 	ret = fw_info_app_print();
 	ERR_CHK(ret);
@@ -204,18 +210,24 @@ void main(void)
 	/* Check DFU BTN before Initialize BLE */
 	dfu_entry_check();
 #endif
+#if 0
+	/* Initialize BLE, with callback for when BLE is ready */
+	ret = ble_core_init(on_ble_core_ready);
+	ERR_CHK(ret);
 
-	// /* Initialize BLE, with callback for when BLE is ready */
-	// ret = ble_core_init(on_ble_core_ready);
-	// ERR_CHK(ret);
+	/* Wait until ble_core/NET core is ready */
+	while (!(bool)atomic_get(&ble_core_is_ready)) {
+		(void)k_sleep(K_MSEC(100));
+	}
+#endif
+	ret = leds_set();
+	ERR_CHK(ret);
 
-	// /* Wait until ble_core/NET core is ready */
-	// while (!(bool)atomic_get(&ble_core_is_ready)) {
-	// 	(void)k_sleep(K_MSEC(100));
-	// }
-
-	// ret = leds_set();
-	// ERR_CHK(ret);
+	// List all the files on the card
+	ret = sd_card_list_files("/");
+	if(ret < 0) {
+		LOG_ERR("Unable to read files from SD card (err %i)", ret);
+	}
 
 	// audio_system_init();
 
@@ -226,6 +238,7 @@ void main(void)
 	// 	streamctrl_event_handler();
 	// 	STACK_USAGE_PRINT("main", &z_main_thread);
 	// }
+	k_msleep(2000);
 	audio_i2s_blk_comp_cb_register(i2s_callback);
 	audio_i2s_init();
 
