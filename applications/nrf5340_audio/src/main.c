@@ -239,16 +239,25 @@ void main(void)
 	// 	STACK_USAGE_PRINT("main", &z_main_thread);
 	// }
 	k_msleep(2000);
-	audio_i2s_blk_comp_cb_register(i2s_callback);
+	audio_i2s_blk_comp_cb_register(audio_wav_i2s_callback);
 	audio_i2s_init();
 
 	ret = hw_codec_init();
 	ERR_CHK(ret);
 	hw_codec_default_conf_enable();
-	hw_codec_volume_set(100);
+	
+
+	// char data[256] = {0};
+
+	// printk("Your data:\n");
+
+	// sd_card_get_file_list("/", data, sizeof(data));
+	// printk("Your data:\t%s\n", data);
+
+
 
 	// LOG_INF("SD transfer size %i, total buffer size %i", SD_CARD_TRANSFER_SIZE, SOUND_BUF_SIZE);
 	
 	// Play test file from SD card
-	play_file_from_sd("C4_30s_48_stereo.wav");
+	// play_file_from_sd("C4_10m_96.wav");
 }

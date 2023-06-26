@@ -1,10 +1,17 @@
 #include "audio_wav.h"
 #include "audio_i2s.h"
-#include "hw_codec.h"
 #include "sd_card.h"
+#include "hw_codec.h"
 #include <stdint.h>
+#include <string.h>
 #include <zephyr/sys/ring_buffer.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/shell/shell.h>
+
+#define DEFAULT_SOUND_VOLUME 100 // Range is from zreo to 128
+#define SD_CARD_MAX_FILENAME_LENGTH 32
+#define SD_CARD_MAX_NUMBER_OF_FILES_IN_DIR 32
+#define SD_CARD_MAX_PATH_LENGTH 32
 
 
 #define I2S_SAMPLES_BITS (I2S_SAMPLES_NUM)
@@ -49,33 +56,16 @@ int play_file_from_sd(const char *filename)
 	// Start by filling the entire ringbuffer
 	sd_card_to_buffer(SOUND_BUF_SIZE);
 
-	printk("play_file func 1\n");
-
 	// Start I2S transmission by setting up both buffersets
 	ring_buf_get(&m_ringbuf_sound_data, (uint8_t *)m_i2s_tx_buf_a, I2S_16BIT_SAMPLE_NUM * 2);
-	printk("Start of play_file func 1.5\n");
 	audio_i2s_start((const uint8_t *)m_i2s_tx_buf_a, (uint32_t *)m_i2s_rx_buf_a);
-	printk("Start of play_file func 1.625\n");
 	ring_buf_get(&m_ringbuf_sound_data, (uint8_t *)m_i2s_tx_buf_b, I2S_16BIT_SAMPLE_NUM * 2);
-	printk("Start of play_file func 1.75\n");
-
 	audio_i2s_set_next_buf((const uint8_t *)m_i2s_tx_buf_b, (uint32_t *)m_i2s_rx_buf_b);	
-	printk("Start of play_file func 2\n");
 
-	int count = 0;
-	uint32_t last_uptime = k_uptime_get_32();
-	uint32_t last_uptime_init = k_uptime_get_32();
+	hw_codec_volume_set(DEFAULT_SOUND_VOLUME);
 	while(1) {
 		// Wait for the load from SD semaphore to be set, signalling that the ringbuffer is half empty
-		uint32_t current_uptime = k_uptime_get_32();
-		uint32_t delta_uptime = current_uptime - last_uptime;
-		last_uptime = current_uptime;
-		printk("%d:\t%d\n", ++count, delta_uptime);
-
 		k_sem_take(&m_sem_load_from_sd, K_FOREVER);
-		printk("%d:\t%d\n", ++count, delta_uptime);
-
-		
 		// Move data from the SD card to the buffer, one half at the time
 		if (sd_card_to_buffer(SD_CARD_TRANSFER_SIZE) < SD_CARD_TRANSFER_SIZE) {
 			// If the function returns less bytes than requested we have reached the end of the file. 
@@ -86,12 +76,6 @@ int play_file_from_sd(const char *filename)
 		}
 	}
 
-	uint32_t time_usage = k_uptime_get_32()-last_uptime_init;
-
-
-	printk("Stopping I2S\n");
-	printk("Time usage:\t%d\n", time_usage);
-
 	audio_i2s_stop();
 
 	printk("Closing file\n");
@@ -99,7 +83,7 @@ int play_file_from_sd(const char *filename)
 	return sd_card_segment_read_close();
 }
 
-void i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, uint32_t const *tx_buf_released)
+void audio_wav_i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, uint32_t const *tx_buf_released)
 {
 	// Update the I2S buffers by reading from the ringbuffer
 	if((uint16_t *)tx_buf_released == m_i2s_tx_buf_a) {
@@ -119,3 +103,68 @@ void i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, uint32_t c
 		k_sem_give(&m_sem_load_from_sd);
 	}
 }
+
+static char sd_card_file_path[SD_CARD_MAX_PATH_LENGTH] = "/";
+
+/* Shell functions */
+static int cmd_play_wav_file(const struct shell *shell, size_t argc, char **argv)
+{
+	play_file_from_sd(&argv[1][0]);
+	return 0;
+}
+
+
+static int cmd_list_files(const struct shell *shell, size_t argc, char **argv)
+{
+	int ret;
+	char buf[256] = {0};
+	size_t buf_size = sizeof(buf);
+	ret = sd_card_get_file_list(sd_card_file_path, buf, buf_size);
+	if (ret < 0){
+		return ret;
+	}
+	printk("\nThis is what gets saved in buffer: %s\n", buf);
+	const char delimiter = ',';
+	uint8_t files_count = 0;
+	uint8_t char_count = 0;
+	char files[SD_CARD_MAX_NUMBER_OF_FILES_IN_DIR][SD_CARD_MAX_FILENAME_LENGTH] = {0};
+	printk("The strlength of the buffer is %d\n", strlen(buf));
+	for (uint8_t i = 0; i<strlen(buf); i++){
+		char character = buf[i];
+		if (character == delimiter){
+			printk("Incrementing!! at iteration %d\n", i);
+			++files_count;
+			char_count = 0;
+		} else{
+			files[files_count][char_count] = character;
+			char_count++;
+		}
+		printk("Files[%d]: %s\n", i, files[files_count]);
+	}
+	printk("Files count = %d\n", files_count);
+	for (int i = 0; i < files_count; i++){
+		printk("iter: %d. Filename: %s\n", i, files[i]);
+		shell_print(shell, "%s", files[i]);
+	}
+	return 0;
+}
+
+static int cmd_change_dir(const struct shell *shell, size_t argc, char **argv)
+{
+	strcat(sd_card_file_path, &argv[1][0]);
+	strcat(sd_card_file_path, "/");
+	printk("The new path is: %s\n", sd_card_file_path);
+	return 0;
+}
+
+/* Creating subcommands (level 1 command) array for command "demo". */
+SHELL_STATIC_SUBCMD_SET_CREATE(audio_wav_cmd,
+			       SHELL_COND_CMD(CONFIG_SHELL, play_file, NULL, "Play file from SD card.",
+					      cmd_play_wav_file),
+			       SHELL_COND_CMD(CONFIG_SHELL, list_files, NULL, "List files on SD card.",
+					      cmd_list_files),
+					SHELL_COND_CMD(CONFIG_SHELL, cd, NULL, "Change directory.",
+					      cmd_change_dir),
+			       SHELL_SUBCMD_SET_END);
+/* Creating root (level 0) command "demo" without a handler */
+SHELL_CMD_REGISTER(audio_wav, &audio_wav_cmd, "Play .wav-files", NULL);
