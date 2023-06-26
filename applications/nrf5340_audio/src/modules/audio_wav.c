@@ -8,7 +8,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/shell/shell.h>
 
-#define DEFAULT_SOUND_VOLUME 100 // Range is from zreo to 128
+#define DEFAULT_SOUND_VOLUME 100 // Range is from zero to 128
 #define SD_CARD_MAX_FILENAME_LENGTH 32
 #define SD_CARD_MAX_NUMBER_OF_FILES_IN_DIR 32
 #define SD_CARD_MAX_PATH_LENGTH 32
@@ -45,12 +45,12 @@ size_t sd_card_to_buffer(int numbytes)
 	return sd_read_length;
 }
 
-int play_file_from_sd(const char *filename)
+int play_file_from_sd(const char *filename, char *path_to_file)
 {
 	printk("Start of play_file func\n");
 
 	printk("Opening file %s\n", filename);
-	int ret = sd_card_segment_read_open(filename);
+	int ret = sd_card_segment_read_open(filename, path_to_file);
 	if(ret < 0) return ret;
 
 	// Start by filling the entire ringbuffer
@@ -104,12 +104,18 @@ void audio_wav_i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, 
 	}
 }
 
-static char sd_card_file_path[SD_CARD_MAX_PATH_LENGTH] = "/";
 
 /* Shell functions */
+static char sd_card_file_path[SD_CARD_MAX_PATH_LENGTH] = "";
+
 static int cmd_play_wav_file(const struct shell *shell, size_t argc, char **argv)
 {
-	play_file_from_sd(&argv[1][0]);
+	const char *filename = argv[1];
+	int ret = play_file_from_sd(filename, sd_card_file_path);
+	if (ret < 0) {
+		shell_error(shell, "ERROR: Could not play audio from file: %s", filename);
+		return ret;
+	};
 	return 0;
 }
 
@@ -119,41 +125,25 @@ static int cmd_list_files(const struct shell *shell, size_t argc, char **argv)
 	int ret;
 	char buf[256] = {0};
 	size_t buf_size = sizeof(buf);
-	ret = sd_card_get_file_list(sd_card_file_path, buf, buf_size);
+	ret = sd_card_get_dir_overview(sd_card_file_path, buf, buf_size);
 	if (ret < 0){
 		return ret;
 	}
-	printk("\nThis is what gets saved in buffer: %s\n", buf);
-	const char delimiter = ',';
-	uint8_t files_count = 0;
-	uint8_t char_count = 0;
-	char files[SD_CARD_MAX_NUMBER_OF_FILES_IN_DIR][SD_CARD_MAX_FILENAME_LENGTH] = {0};
-	printk("The strlength of the buffer is %d\n", strlen(buf));
-	for (uint8_t i = 0; i<strlen(buf); i++){
-		char character = buf[i];
-		if (character == delimiter){
-			printk("Incrementing!! at iteration %d\n", i);
-			++files_count;
-			char_count = 0;
-		} else{
-			files[files_count][char_count] = character;
-			char_count++;
-		}
-		printk("Files[%d]: %s\n", i, files[files_count]);
-	}
-	printk("Files count = %d\n", files_count);
-	for (int i = 0; i < files_count; i++){
-		printk("iter: %d. Filename: %s\n", i, files[i]);
-		shell_print(shell, "%s", files[i]);
-	}
+	shell_print(shell, "%s", buf);
 	return 0;
 }
 
 static int cmd_change_dir(const struct shell *shell, size_t argc, char **argv)
 {
-	strcat(sd_card_file_path, &argv[1][0]);
-	strcat(sd_card_file_path, "/");
-	printk("The new path is: %s\n", sd_card_file_path);
+	if (argv[1][0] == '/'){ 
+		sd_card_file_path[0] = '\0';
+		shell_print(shell, "Current directory: root");
+	} else{
+		strcat(sd_card_file_path, &argv[1][0]);
+		strcat(sd_card_file_path, "/");
+		shell_print(shell, "Current directory: %s", sd_card_file_path);
+
+	}
 	return 0;
 }
 

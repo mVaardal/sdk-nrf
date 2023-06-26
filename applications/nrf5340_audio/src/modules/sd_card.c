@@ -88,7 +88,69 @@ int sd_card_list_files(char *path)
 	return 0;
 }
 
-int sd_card_get_file_list(char *path, char *buf, size_t buf_size)
+// int sd_card_get_file_list(char *path, char *buf, size_t buf_size)
+// {
+// 	int ret;
+// 	struct fs_dir_t dirp;
+// 	static struct fs_dirent entry;
+// 	char abs_path_name[PATH_MAX_LEN + 1] = SD_ROOT_PATH;
+
+// 	if (!sd_init_success) {
+// 		return -ENODEV;
+// 	}
+// 	fs_dir_t_init(&dirp);
+
+// 	if (path == NULL) {
+// 		ret = fs_opendir(&dirp, sd_root_path);
+// 		if (ret) {
+// 			LOG_ERR("Open SD card root dir failed");
+// 			return ret;
+// 		}
+// 	} else {
+// 		if (strlen(path) > CONFIG_FS_FATFS_MAX_LFN) {
+// 			LOG_ERR("Path is too long");
+// 			return -FR_INVALID_NAME;
+// 		}
+
+// 		strcat(abs_path_name, path);
+
+// 		ret = fs_opendir(&dirp, abs_path_name);
+// 		if (ret) {
+// 			LOG_ERR("Open assigned path failed");
+// 			return ret;
+// 		}
+// 	}
+
+// 	while (true) {
+// 		ret = fs_readdir(&dirp, &entry);
+// 		if (ret) {
+// 			return ret;
+// 		}
+
+// 		if (entry.name[0] == 0) {
+// 			break;
+// 		}
+
+// 		if (entry.type == FS_DIR_ENTRY_DIR) {
+// 			LOG_INF("[DIR ] %s", entry.name);
+// 		} else {
+// 			size_t available_buf_size = buf_size - strlen(buf) - sizeof('\0') - sizeof(',');
+// 			strncat(buf, entry.name, available_buf_size);
+// 			strncat(buf, ",", available_buf_size);
+// 			LOG_INF("[FILE] %s", entry.name);
+// 		}
+// 	}
+
+// 	ret = fs_closedir(&dirp);
+// 	if (ret) {
+// 		LOG_ERR("Close SD card root dir failed");
+// 		return ret;
+// 	}
+
+// 	return 0;
+// }
+
+int sd_card_get_dir_overview(char *path, char *buf, size_t buf_size)
 {
 	int ret;
 	struct fs_dir_t dirp;
@@ -133,24 +195,16 @@ int sd_card_get_file_list(char *path, char *buf, size_t buf_size)
 
 		if (entry.type == FS_DIR_ENTRY_DIR) {
 			LOG_INF("[DIR ] %s", entry.name);
-		} else {
-			// if (buf_size_0 <= num_files){
-			// 	LOG_ERR("ERROR: Write to a full buffer.");
-			// 	return -1;
-			// }
-			// const char *filename = entry.name;
-			// size_t filename_size = strlen(filename);
-			
-			// if (buf_size_1 <= filename_size){
-			// 	LOG_ERR("ERROR: Filename is too big for buffer.");
-			// 	return -1;
-			// }
-			// data[num_files] = filename;
-			// ++num_files;
 			size_t available_buf_size = buf_size - strlen(buf) - sizeof('\0') - sizeof(',');
+			strncat(buf, "[DIR ]\t", available_buf_size);
 			strncat(buf, entry.name, available_buf_size);
-			// strcat(buf, (const char *)entry.name);
-			strncat(buf, ",", available_buf_size);
+			strncat(buf, "\n", available_buf_size);
+			LOG_INF("[DIR] %s", entry.name);
+		} else {
+			size_t available_buf_size = buf_size - strlen(buf) - sizeof('\0') - sizeof(',');
+			strncat(buf, "[FILE]\t", available_buf_size);
+			strncat(buf, entry.name, available_buf_size);
+			strncat(buf, "\n", available_buf_size);
 			LOG_INF("[FILE] %s", entry.name);
 		}
 	}
@@ -163,8 +217,6 @@ int sd_card_get_file_list(char *path, char *buf, size_t buf_size)
 
 	return 0;
 }
-
-
 
 
 int sd_card_write(char const *const filename, char const *const data, size_t *size)
@@ -305,10 +357,10 @@ int sd_card_init(void)
 static volatile bool seg_read_started = false;
 static struct fs_file_t f_seg_read_entry;
 
-int sd_card_segment_read_open(char const *const filename)
+int sd_card_segment_read_open(char const *const filename, char *path_to_file)
 {
 	char abs_path_name[PATH_MAX_LEN + 1] = SD_ROOT_PATH;
-
+	strcat(abs_path_name, path_to_file);
 	printk("abs path name:\t%s\n", abs_path_name);
 	int ret;
 
