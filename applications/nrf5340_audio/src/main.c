@@ -25,6 +25,11 @@
 #include "audio_system.h"
 #include "channel_assignment.h"
 #include "streamctrl.h"
+#include "audio_wav.h"
+#include "audio_i2s.h"
+#include "hw_codec.h"
+#include <zephyr/sys/ring_buffer.h>
+
 
 #if defined(CONFIG_AUDIO_DFU_ENABLE)
 #include "dfu_entry.h"
@@ -158,6 +163,8 @@ void on_ble_core_ready(void)
 	}
 }
 
+
+
 void main(void)
 {
 	int ret;
@@ -201,7 +208,6 @@ void main(void)
 	/* Check DFU BTN before Initialize BLE */
 	dfu_entry_check();
 #endif
-
 	/* Initialize BLE, with callback for when BLE is ready */
 	ret = ble_core_init(on_ble_core_ready);
 	ERR_CHK(ret);
@@ -211,16 +217,28 @@ void main(void)
 		(void)k_sleep(K_MSEC(100));
 	}
 
+
 	ret = leds_set();
 	ERR_CHK(ret);
 
-	audio_system_init();
-
-	ret = streamctrl_start();
-	ERR_CHK(ret);
-
-	while (1) {
-		streamctrl_event_handler();
-		STACK_USAGE_PRINT("main", &z_main_thread);
+	// List all the files on the card
+	ret = sd_card_list_files("/");
+	if(ret < 0) {
+		LOG_ERR("Unable to read files from SD card (err %i)", ret);
 	}
+
+	audio_system_init();
+	audio_i2s_blk_comp_cb_register(audio_wav_i2s_callback);
+
+	// Denne funksjonen funker ikke sammen med audio_wav
+	// ret = streamctrl_start();
+	// ERR_CHK(ret);
+
+	// while (1) {
+	// 	streamctrl_event_handler();
+	// 	STACK_USAGE_PRINT("main", &z_main_thread);
+	// }
+	k_msleep(2000);
+	ERR_CHK(ret);
+	hw_codec_default_conf_enable();
 }

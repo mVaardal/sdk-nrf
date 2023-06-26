@@ -60,4 +60,16 @@ int sd_card_read(char const *const filename, char *const data, size_t *size);
  */
 int sd_card_init(void);
 
+int sd_card_segment_read_open(char const *const filename, char *path_to_file);
+int sd_card_segment_read(char *const data, size_t *size);
+int sd_card_segment_read_close(void);
+
+/**@brief   Get overview of directory. Data written to buffer can be printed directly.
+ * @param[in] path  Path to directory  
+ * @param[in, out] buf  Buffer where data gets stored 
+ * @param[in] buf_size  Size of buffer 
+ * @retval  0 on success
+*/
+int sd_card_get_dir_overview(char *path, char *buf, size_t buf_size);
+
 #endif /* _SD_CARD_H_ */
