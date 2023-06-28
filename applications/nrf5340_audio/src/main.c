@@ -222,7 +222,9 @@ void main(void)
 	ERR_CHK(ret);
 
 	// List all the files on the card
-	ret = sd_card_list_files("/");
+	char buf11[256] = {0};
+	printk("The size of buf11 is %zu\n", sizeof(buf11));
+	ret = sd_card_list_files("/", buf11, sizeof(buf11));
 	if(ret < 0) {
 		LOG_ERR("Unable to read files from SD card (err %i)", ret);
 	}
@@ -241,4 +243,9 @@ void main(void)
 	k_msleep(2000);
 	ERR_CHK(ret);
 	hw_codec_default_conf_enable();
+
+	printk("Se det\n");
+	audio_wav_play_file_from_sd("C4_1s_48.wav", "");
+	audio_wav_play_file_from_sd("D4_1s_48.wav", "");
+	audio_wav_play_file_from_sd("E4_1s_48.wav", "");
 }

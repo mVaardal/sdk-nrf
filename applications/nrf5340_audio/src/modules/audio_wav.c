@@ -44,11 +44,14 @@ size_t sd_card_to_buffer(int numbytes)
 	return sd_read_length;
 }
 
-int play_file_from_sd(const char *filename, char *path_to_file)
+int audio_wav_play_file_from_sd(const char *filename, char *path_to_file)
 {
 	printk("Opening file %s\n", filename);
 	int ret = sd_card_segment_read_open(filename, path_to_file);
-	if(ret < 0) return ret;
+	if(ret < 0) {
+		printk("Could not open file!\n");
+		return ret;
+	}
 
 	// Start by filling the entire ringbuffer
 	sd_card_to_buffer(SOUND_BUF_SIZE);
@@ -65,6 +68,7 @@ int play_file_from_sd(const char *filename, char *path_to_file)
 		k_sem_take(&m_sem_load_from_sd, K_FOREVER);
 		// Move data from the SD card to the buffer, one half at the time
 		if (sd_card_to_buffer(SD_CARD_TRANSFER_SIZE) < SD_CARD_TRANSFER_SIZE) {
+			printk("Done playing!!!\n");
 			// If the function returns less bytes than requested we have reached the end of the file. 
 			// Exit the while loop and stop the I2S driver
 			ret = hw_codec_volume_mute();
@@ -108,7 +112,8 @@ static char sd_card_file_path[SD_CARD_MAX_PATH_LENGTH] = "";
 static int cmd_play_wav_file(const struct shell *shell, size_t argc, char **argv)
 {
 	const char *filename = argv[1];
-	int ret = play_file_from_sd(filename, sd_card_file_path);
+	printk("Playing: %s%s\n", sd_card_file_path, filename);
+	int ret = audio_wav_play_file_from_sd(filename, sd_card_file_path);
 	if (ret < 0) {
 		shell_error(shell, "ERROR: Could not play audio from file: %s", filename);
 		return ret;
@@ -121,9 +126,10 @@ static int cmd_list_files(const struct shell *shell, size_t argc, char **argv)
 {
 	int ret;
 	char buf[256] = {0};
-	size_t buf_size = sizeof(buf);
-	ret = sd_card_get_dir_overview(sd_card_file_path, buf, buf_size);
+	printk("In cmd list files!\n");
+	ret = sd_card_list_files(sd_card_file_path, buf, sizeof(buf));
 	if (ret < 0){
+		printk("Something went wrong!\n");
 		return ret;
 	}
 	shell_print(shell, "%s", buf);
@@ -145,7 +151,7 @@ static int cmd_change_dir(const struct shell *shell, size_t argc, char **argv)
 }
 
 /* Creating subcommands (level 1 command) array for command "demo". */
-SHELL_STATIC_SUBCMD_SET_CREATE(audio_sd_cmd,
+SHELL_STATIC_SUBCMD_SET_CREATE(audio_wav_cmd,
 			       SHELL_COND_CMD(CONFIG_SHELL, play_file, NULL, "Play file from SD card.",
 					      cmd_play_wav_file),
 			       SHELL_COND_CMD(CONFIG_SHELL, list_files, NULL, "List files and directories on SD card.",
@@ -154,4 +160,4 @@ SHELL_STATIC_SUBCMD_SET_CREATE(audio_sd_cmd,
 					      cmd_change_dir),
 			       SHELL_SUBCMD_SET_END);
 /* Creating root (level 0) command "demo" without a handler */
-SHELL_CMD_REGISTER(audio_sd, &audio_sd_cmd, "Play .wav-files", NULL);
+SHELL_CMD_REGISTER(audio_wav, &audio_wav_cmd, "Play .wav-files", NULL);
