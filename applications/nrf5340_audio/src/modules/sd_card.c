@@ -304,4 +304,3 @@ int sd_card_segment_read_close(void)
 	
 	return 0;
 }
-
