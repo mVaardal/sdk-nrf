@@ -18,26 +18,44 @@
 #define I2S_SAMPLES_BITS (I2S_SAMPLES_NUM)
 #define I2S_16BIT_SAMPLE_NUM (I2S_SAMPLES_BITS*2)
 #define I2S_BUF_BYTES		 (I2S_16BIT_SAMPLE_NUM * 2)
-#define SOUND_BUF_SIZE (I2S_16BIT_SAMPLE_NUM * 2 * 4)
-#define SD_CARD_TRANSFER_SIZE (SOUND_BUF_SIZE / 2)
+#define WAV_SOUND_BUF_SIZE (I2S_16BIT_SAMPLE_NUM * 2 * 4)
+#define LC3_SOUND_BUF_SIZE (WAV_SOUND_BUF_SIZE/3)
+#define SD_CARD_TRANSFER_SIZE (WAV_SOUND_BUF_SIZE / 2)
 
 K_SEM_DEFINE(m_sem_load_from_sd, 0, 1);
-RING_BUF_DECLARE(m_ringbuf_sound_data, SOUND_BUF_SIZE);
+RING_BUF_DECLARE(m_ringbuf_sound_data, LC3_SOUND_BUF_SIZE);
 
 static uint16_t m_i2s_tx_buf_a[I2S_16BIT_SAMPLE_NUM], m_i2s_rx_buf_a[I2S_16BIT_SAMPLE_NUM], m_i2s_tx_buf_b[I2S_16BIT_SAMPLE_NUM], m_i2s_rx_buf_b[I2S_16BIT_SAMPLE_NUM];
 
 size_t sd_card_to_buffer(int numbytes)
 {
-	uint8_t *buf_ptr;
-	size_t sd_read_length = numbytes;
+	int ret;
+	static uint8_t buf_ptr[LC3_SOUND_BUF_SIZE];
+	size_t sd_read_length = LC3_SOUND_BUF_SIZE;
+	uint8_t *pcm_data;
+	uint16_t pcm_wr_size;
+	size_t num_claimed_bytes;
 
 	// Claim a buffer from the ringbuffer. This allows us to read the file data directly into 
 	// the buffer without requiring a memcpy
-	sd_read_length = ring_buf_put_claim(&m_ringbuf_sound_data, &buf_ptr, sd_read_length);
+	num_claimed_bytes = ring_buf_put_claim(&m_ringbuf_sound_data, &pcm_data, numbytes);
 
 	// For simplicity, assume the claim was successful (the flow of the program ensures this)
 	// Read the data from the file and move it into the ringbuffer
-	sd_card_segment_read(buf_ptr, &sd_read_length);
+	ret = sd_card_segment_read(buf_ptr, &sd_read_length);
+	if (ret < 0){
+		printk("Sd card seg read failed\n");
+		__ASSERT_NO_MSG(ret == 0);
+		return ret;
+	}
+
+	printk("This is the data in the encoded buffer: 0x%08x\n", buf_ptr);
+
+	ret = sw_codec_lc3_dec_run(buf_ptr, sd_read_length,
+			 num_claimed_bytes, 0, (uint16_t *)pcm_data,
+				&pcm_wr_size, false);
+	printk("Return value after decode function is: %d\n", ret);
+	__ASSERT_NO_MSG(ret == 0);
 
 	// Finish the claim, allowing the data to be read from the buffer in the I2S interrupt
 	ring_buf_put_finish(&m_ringbuf_sound_data, sd_read_length);
@@ -49,15 +67,32 @@ size_t sd_card_to_buffer(int numbytes)
 int audio_wav_play_file_from_sd(const char *filename, char *path_to_file)
 {
 	
-	printk("Opening file %s\n", filename);
 	int ret = sd_card_segment_open(filename, path_to_file);
+	printk("Opening file %s\n", filename);
 	if(ret < 0) {
 		printk("Could not open file!\n");
 		return ret;
 	}
 
+	uint16_t sample_rate = 48000;
+	uint16_t frame_size = 10000;
+	ret = sw_codec_lc3_init(NULL, NULL,
+		      frame_size);
+	if (ret < 0){
+		printk("Sw codec init failed! Ret: %d\n", ret);
+		return ret;
+	}
+	ret = sw_codec_lc3_dec_init(sample_rate,
+						    CONFIG_AUDIO_BIT_DEPTH_BITS,
+						    CONFIG_AUDIO_FRAME_DURATION_US,
+						    SW_CODEC_MONO);
+	if (ret < 0){
+		printk("Sw codec decoder init failed! Ret: %d\n", ret);
+		return ret;
+	}
+
 	// Start by filling the entire ringbuffer
-	sd_card_to_buffer(SOUND_BUF_SIZE);
+	sd_card_to_buffer(WAV_SOUND_BUF_SIZE);
 
 	// Start I2S transmission by setting up both buffersets
 	ring_buf_get(&m_ringbuf_sound_data, (uint8_t *)m_i2s_tx_buf_a, I2S_BUF_BYTES);
