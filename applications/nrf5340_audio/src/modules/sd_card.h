@@ -69,7 +69,7 @@ int sd_card_init(void);
  *              -ENODEV SD init faile. SD likely not inserted
  *      Otherwise, error from undelying drivers
 */
-int sd_card_segment_read_open(char const *const filename, const char *path_to_file);
+int sd_card_segment_open(char const *const filename, const char *path_to_file);
 
 /**@brief   Read segment on the open file on the SD card
  * param[in] data   Where the read data is stored
@@ -88,6 +88,6 @@ int sd_card_segment_read(char *const data, size_t *size);
  *              -EBUSY Segment read operation has not started
  *      Otherwise, error from undelying drivers
 */
-int sd_card_segment_read_close(void);
+int sd_card_segment_close(void);
 
 #endif /* _SD_CARD_H_ */

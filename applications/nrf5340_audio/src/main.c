@@ -222,12 +222,12 @@ void main(void)
 	ERR_CHK(ret);
 
 	// List all the files on the card
-	char buf11[256] = {0};
-	printk("The size of buf11 is %zu\n", sizeof(buf11));
-	ret = sd_card_list_files("/", buf11, sizeof(buf11));
-	if(ret < 0) {
-		LOG_ERR("Unable to read files from SD card (err %i)", ret);
-	}
+	// char buf11[1024] = {0};
+	// printk("The size of buf11 is %zu\n", sizeof(buf11));
+	// ret = sd_card_list_files("/", buf11, sizeof(buf11));
+	// if(ret < 0) {
+	// 	LOG_ERR("Unable to read files from SD card (err %i)", ret);
+	// }
 
 	audio_system_init();
 	audio_i2s_blk_comp_cb_register(audio_wav_i2s_callback);
@@ -244,51 +244,7 @@ void main(void)
 	ERR_CHK(ret);
 	hw_codec_default_conf_enable();
 
-	printk("Se det\n");
-	audio_wav_play_file_from_sd("whitney.wav", "");
-	// audio_wav_play_file_from_sd("D4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("F4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("G4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("G4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("G4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("G4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("G4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("G4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("G4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("G4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
-	// audio_wav_play_file_from_sd("E4_1s_48.wav", "");
+	// printk("Se det\n");
+	// audio_wav_play_file_from_sd("whitney.wav", "");
+
 }

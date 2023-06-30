@@ -50,7 +50,7 @@ int audio_wav_play_file_from_sd(const char *filename, char *path_to_file)
 {
 	
 	printk("Opening file %s\n", filename);
-	int ret = sd_card_segment_read_open(filename, path_to_file);
+	int ret = sd_card_segment_open(filename, path_to_file);
 	if(ret < 0) {
 		printk("Could not open file!\n");
 		return ret;
@@ -86,7 +86,7 @@ int audio_wav_play_file_from_sd(const char *filename, char *path_to_file)
 
 	printk("Closing file\n");
 
-	return sd_card_segment_read_close();
+	return sd_card_segment_close();
 }
 
 void audio_wav_i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, uint32_t const *tx_buf_released)
@@ -134,7 +134,7 @@ static int cmd_play_wav_file(const struct shell *shell, size_t argc, char **argv
 static int cmd_list_files(const struct shell *shell, size_t argc, char **argv)
 {
 	int ret;
-	char buf[256] = {0};
+	char buf[254] = {0};
 	printk("In cmd list files!\n");
 	ret = sd_card_list_files(sd_card_file_path, buf, sizeof(buf));
 	if (ret < 0){
