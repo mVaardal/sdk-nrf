@@ -83,7 +83,7 @@ int sd_card_segment_open(char const *const filename, const char *path_to_file);
 */
 int sd_card_segment_read(char *const data, size_t *size);
 
-/**@brief   Close the file opened by the sd_card_segment_read_open function
+/**@brief   Close the file opened by the sd_card_segment_open function
  * @retval  0 on success
  *              -EBUSY Segment read operation has not started
  *      Otherwise, error from undelying drivers

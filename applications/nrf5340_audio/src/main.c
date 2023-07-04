@@ -26,6 +26,7 @@
 #include "channel_assignment.h"
 #include "streamctrl.h"
 #include "audio_wav.h"
+#include "audio_lc3.h"
 #include "audio_i2s.h"
 #include "hw_codec.h"
 #include <zephyr/sys/ring_buffer.h>
@@ -167,6 +168,7 @@ void on_ble_core_ready(void)
 
 void main(void)
 {
+	printk("at the top of main\n");
 	int ret;
 
 	LOG_DBG("nRF5340 APP core started");
@@ -243,8 +245,8 @@ void main(void)
 	k_msleep(2000);
 	ERR_CHK(ret);
 	hw_codec_default_conf_enable();
-
-	printk("Se det\n");
-	audio_wav_play_file_from_sd("enc_1.bin", "");
-
+	printk("Halla\n");
+	audio_lc3_read_header_file("enc_2.bin", "");
+	// printkl();
+	// audio_wav_play_file_from_sd("enc_1.bin", "");
 }
