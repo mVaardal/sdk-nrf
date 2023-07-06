@@ -10,7 +10,7 @@
 #include "sw_codec_lc3.h"
 #include "audio_datapath.h"
 
-#define DEFAULT_SOUND_VOLUME 100 // Ranges from 0 to 128
+#define DEFAULT_SOUND_VOLUME 60 // Ranges from 0 to 128
 #define SD_CARD_MAX_FILENAME_LENGTH 32
 #define SD_CARD_MAX_NUMBER_OF_FILES_IN_DIR 32
 #define SD_CARD_MAX_PATH_LENGTH 32
@@ -166,6 +166,7 @@ void audio_wav_i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, 
 
 	// Check the current free space in the buffer.
 	// If more than half the buffer is free we should move more data from the SD card
+	printk("leftover space in the ringbuffer: %d\n", ring_buf_space_get(&m_ringbuf_sound_data));
 	if(ring_buf_space_get(&m_ringbuf_sound_data) > 1920) {
 		k_sem_give(&m_sem_load_from_buf);
 	}
@@ -215,6 +216,7 @@ int buffer_to_ringbuffer(uint8_t *buffer, size_t numbytes){
 }
 
 int audio_lc3_read_header_file(const char *filename, const char *filepath){
+	printk("I2S_16BIT_SAMPLE_NUM: %d\n", I2S_16BIT_SAMPLE_NUM);
 	printk("SD card transfer size: %d\n", SD_CARD_TRANSFER_SIZE);
 	int ret;
 	lc3BinaryHdr_t header = {0};
@@ -268,6 +270,9 @@ int audio_lc3_read_header_file(const char *filename, const char *filepath){
 	size_t pcm_data_buf_size = sizeof(pcm_data) * 2;
 	uint16_t pcm_write_size;
 	ret = sw_codec_lc3_dec_run(buf, buf_size1, pcm_data_buf_size, 0, pcm_data, &pcm_write_size, false);
+	printk("Here are the parameters of sw_codec dec run: ---\n");
+	printk("Buf size: %d\n", buf_size1);
+	printk("Pcm data buf size: %d\n", pcm_data_buf_size);
 	ret = pscm_zero_pad(pcm_data, 960,
 						0, 16,
 						pcm_data_stereo, &pcm_data_stereo_size);
@@ -288,6 +293,7 @@ int audio_lc3_read_header_file(const char *filename, const char *filepath){
 	audio_i2s_start((const uint8_t *)m_i2s_tx_buf_a, (uint32_t *)m_i2s_rx_buf_a);
 	ring_buf_get(&m_ringbuf_sound_data, (uint8_t *)m_i2s_tx_buf_b, I2S_BUF_BYTES);
 	audio_i2s_set_next_buf((const uint8_t *)m_i2s_tx_buf_b, (uint32_t *)m_i2s_rx_buf_b);
+	hw_codec_volume_set(DEFAULT_SOUND_VOLUME);
 
 	while (1){
 		ret = sd_card_segment_read((char *)&framelen, &framelen_size);
@@ -312,6 +318,7 @@ int audio_lc3_read_header_file(const char *filename, const char *filepath){
 		// printk("Pcm write size: %d\n", pcm_write_size);
 		// printk("Pcm write size STEREO: %d\n", pcm_data_stereo_size);
 		// printk("Done waiting for semaphore\n");
+		printk("Amount of data sent over from buf to ringbuf: %d\n", pcm_data_stereo_size);
 		ret = buffer_to_ringbuffer((uint8_t *)pcm_data_stereo, pcm_data_stereo_size);
 		if (ret < 0){
 			// printk("Error when calling buffer to ringbuffer function\n");

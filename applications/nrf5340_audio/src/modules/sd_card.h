@@ -88,6 +88,9 @@ int sd_card_segment_read(char *const data, size_t *size);
  *              -EBUSY Segment read operation has not started
  *      Otherwise, error from undelying drivers
 */
+
+int sd_card_segment_peek(char *const data, size_t *size);
+
 int sd_card_segment_close(void);
 
 #endif /* _SD_CARD_H_ */

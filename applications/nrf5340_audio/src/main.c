@@ -232,7 +232,9 @@ void main(void)
 	// }
 
 	audio_system_init();
-	audio_i2s_blk_comp_cb_register(audio_wav_i2s_callback);
+	// audio_i2s_blk_comp_cb_register(audio_wav_i2s_callback);
+	audio_i2s_blk_comp_cb_register(audio_lc3_i2s_callback);
+
 
 	// Denne funksjonen funker ikke sammen med audio_wav
 	// ret = streamctrl_start();
@@ -246,7 +248,8 @@ void main(void)
 	ERR_CHK(ret);
 	hw_codec_default_conf_enable();
 	printk("Halla\n");
-	audio_lc3_read_header_file("enc_2.bin", "");
+	// audio_lc3_read_header_file("enc_4.bin", "");
+	audio_lc3_play("enc_4.bin", "");
 	// printkl();
 	// audio_wav_play_file_from_sd("enc_1.bin", "");
 }
