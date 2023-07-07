@@ -1,4 +1,5 @@
 #include "audio_wav.h"
+#include "audio_lc3.h"
 #include "audio_i2s.h"
 #include "sd_card.h"
 #include "hw_codec.h"
@@ -9,6 +10,8 @@
 #include <zephyr/logging/log.h>
 #include "sw_codec_lc3.h"
 #include "audio_datapath.h"
+#include "pcm_stream_channel_modifier.h"
+
 
 #define DEFAULT_SOUND_VOLUME 60 // Ranges from 0 to 128
 #define SD_CARD_MAX_FILENAME_LENGTH 32
@@ -357,11 +360,29 @@ static int cmd_play_wav_file(const struct shell *shell, size_t argc, char **argv
 	return 0;
 }
 
+static int cmd_play_lc3_file(const struct shell *shell, size_t argc, char **argv)
+{
+	int ret;
+	const char *filename = argv[1];
+	printk("Playing: %s%s\n", sd_card_file_path, filename);
+	ret = audio_lc3_play_init(filename, sd_card_file_path);
+	if (ret < 0) {
+		shell_error(shell, "ERROR: Could not initialize play audio from file: %s", filename);
+		return ret;
+	};
+	ret = audio_lc3_play(filename, sd_card_file_path);
+	if (ret < 0) {
+		shell_error(shell, "ERROR: Could not play audio from file: %s", filename);
+		return ret;
+	};
+	return 0;
+}
+
 
 static int cmd_list_files(const struct shell *shell, size_t argc, char **argv)
 {
 	int ret;
-	char buf[254] = {0};
+	char buf[1024] = {0};
 	printk("In cmd list files!\n");
 	ret = sd_card_list_files(sd_card_file_path, buf, sizeof(buf));
 	if (ret < 0){
@@ -387,13 +408,15 @@ static int cmd_change_dir(const struct shell *shell, size_t argc, char **argv)
 }
 
 /* Creating subcommands (level 1 command) array for command "demo". */
-SHELL_STATIC_SUBCMD_SET_CREATE(audio_wav_cmd,
-			       SHELL_COND_CMD(CONFIG_SHELL, play_file, NULL, "Play file from SD card.",
+SHELL_STATIC_SUBCMD_SET_CREATE(audio_cmd,
+			       SHELL_COND_CMD(CONFIG_SHELL, play_wav_file, NULL, "Play wav file from SD card.",
 					      cmd_play_wav_file),
+					SHELL_COND_CMD(CONFIG_SHELL, play_lc3_file, NULL, "Play lc3 file from SD card.",
+					      cmd_play_lc3_file),
 			       SHELL_COND_CMD(CONFIG_SHELL, list_files, NULL, "List files and directories on SD card.",
 					      cmd_list_files),
 					SHELL_COND_CMD(CONFIG_SHELL, cd, NULL, "Change directory.",
 					      cmd_change_dir),
 			       SHELL_SUBCMD_SET_END);
 /* Creating root (level 0) command "demo" without a handler */
-SHELL_CMD_REGISTER(audio_wav, &audio_wav_cmd, "Play .wav-files", NULL);
+SHELL_CMD_REGISTER(audio, &audio_cmd, "Play audio-files", NULL);

@@ -247,9 +247,7 @@ void main(void)
 	k_msleep(2000);
 	ERR_CHK(ret);
 	hw_codec_default_conf_enable();
-	printk("Halla\n");
 	// audio_lc3_read_header_file("enc_4.bin", "");
-	audio_lc3_play("enc_4.bin", "");
-	// printkl();
-	// audio_wav_play_file_from_sd("enc_1.bin", "");
+	audio_lc3_play_init("enc_1.bin", "");
+	audio_lc3_play("enc_1.bin", "");
 }
