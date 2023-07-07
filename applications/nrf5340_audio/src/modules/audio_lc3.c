@@ -8,10 +8,11 @@
 #include "pcm_stream_channel_modifier.h"
 #include "audio_i2s.h"
 
-#define AUDIO_LC3_DEFAULT_VOLUME 30
+#define AUDIO_LC3_DEFAULT_VOLUME 50
 #define AUDIO_LC3_BIT_DEPTH 16
-#define I2S_16BIT_SAMPLE_NUM 768
-#define I2S_BUF_BYTES (I2S_16BIT_SAMPLE_NUM * 2)
+/* Amount of 16-bit samples that fit within a block */
+#define I2S_16BIT_SAMPLES_NUM (I2S_SAMPLES_NUM * 2)
+#define I2S_8BIT_SAMPLES_NUM (I2S_16BIT_SAMPLES_NUM * 2)
 
 /*File structure of the LC3 encoded files*/
 typedef struct {
@@ -29,10 +30,11 @@ typedef struct {
 static lc3BinaryHdr_t header;
 static size_t header_size = sizeof(lc3BinaryHdr_t);
 static uint16_t lc3_frame_length;
-// switched from 16 to char!
-static char *pcm_mono_frame;
+static uint16_t pcm_mono_frame_size;
+static uint16_t pcm_stereo_frame_size;
+static uint32_t num_samples;
 
-static uint16_t m_i2s_tx_buf_a[I2S_16BIT_SAMPLE_NUM], m_i2s_rx_buf_a[I2S_16BIT_SAMPLE_NUM], m_i2s_tx_buf_b[I2S_16BIT_SAMPLE_NUM], m_i2s_rx_buf_b[I2S_16BIT_SAMPLE_NUM];
+static uint16_t m_i2s_tx_buf_a[I2S_16BIT_SAMPLES_NUM], m_i2s_rx_buf_a[I2S_16BIT_SAMPLES_NUM], m_i2s_tx_buf_b[I2S_16BIT_SAMPLES_NUM], m_i2s_rx_buf_b[I2S_16BIT_SAMPLES_NUM];
 
 RING_BUF_DECLARE(m_ringbuf_sound_data_lc3, 3840);
 K_SEM_DEFINE(m_sem_load_from_buf_lc3, 0, 1);
@@ -40,9 +42,9 @@ K_SEM_DEFINE(m_sem_load_from_buf_lc3, 0, 1);
 
 int audio_lc3_set_up_i2s_transmission(){
 	// Start I2S transmission by setting up both buffersets
-	ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_a, I2S_BUF_BYTES);
+	// ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_a, I2S_8BIT_SAMPLES_NUM);
 	audio_i2s_start((const uint8_t *)m_i2s_tx_buf_a, (uint32_t *)m_i2s_rx_buf_a);
-	ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_b, I2S_BUF_BYTES);
+	// ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_b, I2S_8BIT_SAMPLES_NUM);
 	audio_i2s_set_next_buf((const uint8_t *)m_i2s_tx_buf_b, (uint32_t *)m_i2s_rx_buf_b);
 	return 0;
 }
@@ -51,10 +53,10 @@ void audio_lc3_i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, 
 {
 	// Update the I2S buffers by reading from the ringbuffer
 	if((uint16_t *)tx_buf_released == m_i2s_tx_buf_a) {
-		ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_a, I2S_BUF_BYTES);
+		ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_a, I2S_8BIT_SAMPLES_NUM);
 		audio_i2s_set_next_buf((const uint8_t *)m_i2s_tx_buf_a, (uint32_t *)m_i2s_rx_buf_a);
 	} else if((uint16_t *)tx_buf_released == m_i2s_tx_buf_b) {
-		ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_b, I2S_BUF_BYTES);
+		ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_b, I2S_8BIT_SAMPLES_NUM);
 		audio_i2s_set_next_buf((const uint8_t *)m_i2s_tx_buf_b, (uint32_t *)m_i2s_rx_buf_b);
 	} else {
 		printk("Should not happen! 0x%x\n", (int)tx_buf_released);
@@ -63,7 +65,6 @@ void audio_lc3_i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, 
 
 	// Check the current free space in the buffer.
 	// If more than half the buffer is free we should move more data from the SD card
-	// printk("Leftover space in ringbuffer is: %d\n", ring_buf_space_get(&m_ringbuf_sound_data_lc3));
 	if(ring_buf_space_get(&m_ringbuf_sound_data_lc3) > 1920) {
 		k_sem_give(&m_sem_load_from_buf_lc3);
 	}
@@ -84,23 +85,18 @@ int audio_lc3_buffer_to_ringbuffer(uint8_t *buffer, size_t numbytes){
 int audio_lc3_play(const char *filename, const char *path_to_file)
 {
 	int ret;
-	lc3BinaryHdr_t header;
-	size_t header_size = sizeof(lc3BinaryHdr_t);
-	char lc3_frame[100];
-	uint16_t lc3_frame_length;
-	size_t lc3_frame_length_size = sizeof(lc3_frame_length);
-	// uint16_t *pcm_mono_frame;
-	uint16_t pcm_mono_frame[480];
-	uint16_t pcm_mono_frame_size;
+	uint16_t pcm_mono_frame[pcm_mono_frame_size / 2];
+	uint16_t pcm_stereo_frame[pcm_stereo_frame_size / 2];
 	uint16_t pcm_mono_write_size;
-	char pcm_stereo_frame[1920];
 	size_t pcm_stereo_write_size;
-	uint32_t num_samples;
+	uint16_t lc3_frame[lc3_frame_length];
+	size_t lc3_fr_len = lc3_frame_length;
+	size_t lc3_fr_len_size = sizeof(lc3_frame_length);
 
 	/* First, open file on SD card */
 	ret = sd_card_segment_open(filename, path_to_file);
 	if (ret < 0) {
-		printk("Error when trying to open file on SD card. Return value: %d", ret);
+		printk("Error when trying to open file on SD card. Return value: %d\n", ret);
 		return ret;
 	}
 
@@ -119,9 +115,6 @@ int audio_lc3_play(const char *filename, const char *path_to_file)
 		return ret;
 	}
 
-	/* I don't really want to pass a pointer to lc3_frame_length_size in the below function... */
-	sd_card_segment_peek((char *)&lc3_frame_length, &lc3_frame_length_size);
-
 	ret = audio_lc3_set_up_i2s_transmission();
 	if (ret < 0){
 		printk("Error when setting up audio i2s transmission. Error nr: %d\n", ret);
@@ -130,26 +123,21 @@ int audio_lc3_play(const char *filename, const char *path_to_file)
 
 	hw_codec_volume_set(AUDIO_LC3_DEFAULT_VOLUME);
 
-	num_samples = (header.signalLenRed << 16) + header.signalLen;
 	for (uint32_t i = 0; i < num_samples; i++) {
-		/* Read/skip the frame length info to get to the audio data */
-		// printk("Header.channels 1: %d\n", header.channels);
-		size_t frs = 100;
-		printk("lc3_frame_length_size: %d\n", lc3_frame_length_size);
-		ret = sd_card_segment_read((char *)&lc3_frame_length, &lc3_frame_length_size);
+		printk("Sample idx:\t%d\n", i);
+		/* Skip the frame length info to get to the audio data */
+		ret = sd_card_segment_skip(&lc3_fr_len_size);
 		if (ret < 0) {
-			printk("Error when trying to read file on SD card. Return value: %d", ret);
+			printk("Error when trying to skip file on SD card. Return value: %d", ret);
 			return ret;
 		}
-		printk("lc3_frame_length: %d\n", lc3_frame_length);
-		ret = sd_card_segment_read((char *)lc3_frame, &frs);
+		ret = sd_card_segment_read((char *)lc3_frame, &lc3_fr_len);
 		if(ret < 0){
 			printk("Something went wrong when reading from SD card. Error nr. %d\n", ret);
 			return ret;
 		}
-		size_t pcm_data_buf_size = 1920;
-		ret = sw_codec_lc3_dec_run(lc3_frame, lc3_frame_length,
-					   pcm_data_buf_size, 0, pcm_mono_frame,
+		ret = sw_codec_lc3_dec_run((char *)lc3_frame, lc3_frame_length,
+					   pcm_stereo_frame_size, 0, pcm_mono_frame,
 					   &pcm_mono_write_size, false);
 		if (ret < 0) {
 			printk("Error when running decoder. Error nr. %d\n", ret);
@@ -162,7 +150,7 @@ int audio_lc3_play(const char *filename, const char *path_to_file)
 			return ret;
 		}
 		k_sem_take(&m_sem_load_from_buf_lc3, K_FOREVER);
-		audio_lc3_buffer_to_ringbuffer(pcm_stereo_frame, pcm_stereo_write_size);
+		audio_lc3_buffer_to_ringbuffer((char *)pcm_stereo_frame, pcm_stereo_write_size);
 	}
 	sd_card_segment_close();
 	return 0;
@@ -194,6 +182,7 @@ int audio_lc3_sw_codec_decoder_init(uint16_t frame_duration_ms, uint32_t sample_
 
 int audio_lc3_play_init(const char *filename, const char *path_to_file){
 	int ret;
+	size_t lc3_frame_length_size = sizeof(lc3_frame_length);
 
 	ret = sd_card_segment_open(filename, path_to_file);
 	if (ret < 0) {
@@ -204,12 +193,17 @@ int audio_lc3_play_init(const char *filename, const char *path_to_file){
 	/* Read the header */
 	ret = sd_card_segment_read((char *)&header, &header_size);
 	if (ret < 0) {
-		printk("Error when trying to peek at file  segment on SD card. Return value: %d", ret);
+		printk("Error when trying to peek at file segment on SD card. Return value: %d", ret);
 		return ret;
 	}
 
-	/* Figure out what the frame length is */
-	ret = sd_card_segment_read((char *)&lc3_frame_length, sizeof(lc3_frame_length));
+	// remember that this is in bytes and not 16-bit samples
+	pcm_mono_frame_size = 2 * header.sampleRate_divided100 * header.frameMs_times100 / 1000;
+	pcm_stereo_frame_size = pcm_mono_frame_size * 2;
+	num_samples = (header.signalLenRed << 16) + header.signalLen;
+
+	/* Read the frame length */
+	ret = sd_card_segment_peek((char *)&lc3_frame_length, &lc3_frame_length_size);
 	if (ret < 0){
 		printk("Error when trying to peek at file  segment on SD card. Return value: %d", ret);
 		return ret;
@@ -220,4 +214,5 @@ int audio_lc3_play_init(const char *filename, const char *path_to_file){
 		printk("Error when trying to close file on SD card. Return value: %d", ret);
 		return ret;
 	}
+	return 0;
 }

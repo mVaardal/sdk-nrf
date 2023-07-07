@@ -253,13 +253,35 @@ int sd_card_segment_peek(char *const data, size_t *size)
 	}
 
 	offset = fs_tell(&f_seg_read_entry);
+	if (offset < 0){
+		LOG_ERR("Fs tell failed");
+		return offset;
+	}
 	ret = fs_read(&f_seg_read_entry, data, *size);
 	if (ret < 0) {
 		LOG_ERR("Read file failed");
 		return ret;
 	}
-	fs_seek(&f_seg_read_entry, offset, 0);
+	ret = fs_seek(&f_seg_read_entry, offset, 0);
+	if (ret < 0){
+		LOG_ERR("Fs seek failed");
+		return ret;
+	}
 	*size = ret;
+
+	return 0;
+}
+
+int sd_card_segment_skip(const size_t *size){
+	int ret;
+	if (!seg_read_started) {
+		return -EBUSY;
+	}
+	ret = fs_seek(&f_seg_read_entry, *size, FS_SEEK_CUR);
+	if (ret < 0){
+		LOG_ERR("Fs seek failed. Return value: %d\n", ret);
+		return ret;
+	}
 
 	return 0;
 }
