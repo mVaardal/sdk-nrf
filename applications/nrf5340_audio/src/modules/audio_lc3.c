@@ -16,6 +16,8 @@ LOG_MODULE_REGISTER(audio_lc3, 4);
 /* Amount of 16-bit samples that fit within a block */
 #define I2S_16BIT_SAMPLES_NUM (I2S_SAMPLES_NUM * 2)
 #define I2S_8BIT_SAMPLES_NUM (I2S_16BIT_SAMPLES_NUM * 2)
+#define AUDIO_CH_0 0
+#define RINGBUF_SIZE 3840 /* Pcm stereo frame size = 1920. Want to fit two frames inside of ringbuffer. 1920 * 2 = 3840. */
 
 /*File structure of the LC3 encoded files*/
 typedef struct {
@@ -34,43 +36,67 @@ static lc3BinaryHdr_t header;
 static size_t header_size = sizeof(lc3BinaryHdr_t);
 static uint16_t lc3_frame_length;
 static uint16_t lc3_frames_num;
-static uint16_t pcm_mono_frame_size;
-static uint16_t pcm_stereo_frame_size;
-static uint16_t ringbuf_size;
+static uint16_t pcm_mono_frame_size_bytes;
+static uint16_t pcm_stereo_frame_size_bytes;
+static uint16_t ringbuf_size; /* Would like to use this variable to initialize the ringbuffer, but I am not doing that , currently */
 static uint8_t bit_depth;
 
 static bool audio_lc3_module_initialized;
 
 static uint16_t m_i2s_tx_buf_a[I2S_16BIT_SAMPLES_NUM], m_i2s_rx_buf_a[I2S_16BIT_SAMPLES_NUM], m_i2s_tx_buf_b[I2S_16BIT_SAMPLES_NUM], m_i2s_rx_buf_b[I2S_16BIT_SAMPLES_NUM];
 
-RING_BUF_DECLARE(m_ringbuf_sound_data_lc3, 3840);
+RING_BUF_DECLARE(m_ringbuf_sound_data_lc3, RINGBUF_SIZE);
 K_SEM_DEFINE(m_sem_load_from_buf_lc3, 0, 1);
 
 
 
+// void audio_lc3_i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, uint32_t const *tx_buf_released)
+// {
+// 	// Update the I2S buffers by reading from the ringbuffer
+// 	if((uint16_t *)tx_buf_released == m_i2s_tx_buf_a) {
+// 		ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_a, I2S_8BIT_SAMPLES_NUM);
+// 		audio_i2s_set_next_buf((const uint8_t *)m_i2s_tx_buf_a, (uint32_t *)m_i2s_rx_buf_a);
+// 	} else if((uint16_t *)tx_buf_released == m_i2s_tx_buf_b) {
+// 		ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_b, I2S_8BIT_SAMPLES_NUM);
+// 		audio_i2s_set_next_buf((const uint8_t *)m_i2s_tx_buf_b, (uint32_t *)m_i2s_rx_buf_b);
+// 	} else {
+// 		LOG_ERR("Should not happen! 0x%x\n", (int)tx_buf_released);
+// 		return;
+// 	}
+
+// 	// Check the current free space in the buffer.
+// 	// If more than half the buffer is free we should move more data from the SD card
+// 	if(ring_buf_space_get(&m_ringbuf_sound_data_lc3) > pcm_stereo_frame_size_bytes) {
+// 		k_sem_give(&m_sem_load_from_buf_lc3);
+// 	}
+// }
+
 void audio_lc3_i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, uint32_t const *tx_buf_released)
 {
-	// Update the I2S buffers by reading from the ringbuffer
-	if((uint16_t *)tx_buf_released == m_i2s_tx_buf_a) {
-		ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_a, I2S_8BIT_SAMPLES_NUM);
-		audio_i2s_set_next_buf((const uint8_t *)m_i2s_tx_buf_a, (uint32_t *)m_i2s_rx_buf_a);
-	} else if((uint16_t *)tx_buf_released == m_i2s_tx_buf_b) {
-		ring_buf_get(&m_ringbuf_sound_data_lc3, (uint8_t *)m_i2s_tx_buf_b, I2S_8BIT_SAMPLES_NUM);
-		audio_i2s_set_next_buf((const uint8_t *)m_i2s_tx_buf_b, (uint32_t *)m_i2s_rx_buf_b);
-	} else {
-		LOG_ERR("Should not happen! 0x%x\n", (int)tx_buf_released);
+	bool input_is_buffer_a = (uint16_t *)tx_buf_released == m_i2s_tx_buf_a;
+	bool input_is_buffer_b = (uint16_t *)tx_buf_released == m_i2s_tx_buf_b;
+	if (!input_is_buffer_a && !input_is_buffer_b){
+		LOG_ERR("Input is neither buffer a nor buffer b. Should not happen");
 		return;
 	}
+	// Update the I2S buffers by reading from the ringbuffer
+	ring_buf_get(&m_ringbuf_sound_data_lc3, input_is_buffer_a ? (uint8_t *)m_i2s_tx_buf_a : (uint8_t *)m_i2s_tx_buf_b, I2S_8BIT_SAMPLES_NUM);
+	audio_i2s_set_next_buf(input_is_buffer_a ? (uint8_t *)m_i2s_tx_buf_a : (uint8_t *)m_i2s_tx_buf_b, input_is_buffer_a ? (uint32_t *)m_i2s_rx_buf_a : (uint32_t *)m_i2s_rx_buf_a);
 
 	// Check the current free space in the buffer.
 	// If more than half the buffer is free we should move more data from the SD card
-	if(ring_buf_space_get(&m_ringbuf_sound_data_lc3) > pcm_stereo_frame_size) {
+	if(ring_buf_space_get(&m_ringbuf_sound_data_lc3) > pcm_stereo_frame_size_bytes) {
 		k_sem_give(&m_sem_load_from_buf_lc3);
 	}
 }
 
+
 int audio_lc3_buffer_to_ringbuffer(uint8_t *buffer, size_t numbytes){
-	/* Burde kanskje ha en sjekk her for å sjekke at numbytes gir mening */
+	// Burde kanskje ha en sjekk her for å sjekke at numbytes gir mening
+	if (numbytes =! pcm_stereo_frame_size_bytes){
+		LOG_ERR("Parameter numbytes does not make sense");
+		return -EINVAL;
+	}
 	static uint8_t *buf_ptr;
 
 	numbytes = ring_buf_put_claim(&m_ringbuf_sound_data_lc3, &buf_ptr, numbytes);
@@ -88,11 +114,11 @@ int audio_lc3_play(const char *filename, const char *path_to_file)
 
 	if (!audio_lc3_module_initialized){
 		LOG_ERR("Audio lc3 module is uninitialized");
-		return -1; // Have to find a fitting return value here
+		return -1; // Have to find an appropriate return value here
 	}
 
-	uint16_t pcm_mono_frame[pcm_mono_frame_size / 2];
-	uint16_t pcm_stereo_frame[pcm_stereo_frame_size / 2];
+	uint16_t pcm_mono_frame[pcm_mono_frame_size_bytes / 2];
+	uint16_t pcm_stereo_frame[pcm_stereo_frame_size_bytes / 2];
 	uint16_t pcm_mono_write_size;
 	size_t pcm_stereo_write_size;
 	uint16_t lc3_frame[lc3_frame_length];
@@ -149,16 +175,15 @@ int audio_lc3_play(const char *filename, const char *path_to_file)
 		}
 
 		/* Decode audio data frame*/
-		// Should maybe figure out a better way of passing parameter number 4 here...
 		ret = sw_codec_lc3_dec_run((char *)lc3_frame, lc3_frame_length,
-					   pcm_stereo_frame_size, 0, pcm_mono_frame,
+					   pcm_stereo_frame_size_bytes, AUDIO_CH_0, pcm_mono_frame,
 					   &pcm_mono_write_size, false);
 		if (ret < 0) {
 			LOG_ERR("Error when running decoder. Return value: %d\n", ret);
 			return ret;
 		}
 		/* Convert from mono to stereo */
-		ret = pscm_zero_pad(pcm_mono_frame, pcm_mono_write_size, 0, bit_depth, pcm_stereo_frame, &pcm_stereo_write_size);
+		ret = pscm_zero_pad(pcm_mono_frame, pcm_mono_write_size, AUDIO_CH_0, bit_depth, pcm_stereo_frame, &pcm_stereo_write_size);
 		if (ret < 0) {
 			LOG_ERR("Error when converting to stereo. Return value: %d", ret);
 			return ret;
@@ -236,11 +261,11 @@ int audio_lc3_play_init(const char *filename, const char *path_to_file){
 	}
 
 	// remember that this is in bytes and not 16-bit samples
-	pcm_mono_frame_size = 2 * header.sampleRate_divided100 * header.frameMs_times100 / 1000;
-	pcm_stereo_frame_size = pcm_mono_frame_size * 2;
-	ringbuf_size = pcm_stereo_frame_size * 2;
+	pcm_mono_frame_size_bytes = 2 * header.sampleRate_divided100 * header.frameMs_times100 / 1000;
+	pcm_stereo_frame_size_bytes = pcm_mono_frame_size_bytes * 2;
+	ringbuf_size = pcm_stereo_frame_size_bytes * 2;
 	num_samples = (header.signalLenRed << 16) + header.signalLen;
-	lc3_frames_num = 2 * num_samples / pcm_mono_frame_size;
+	lc3_frames_num = 2 * num_samples / pcm_mono_frame_size_bytes;
 	bit_depth = AUDIO_LC3_BIT_DEPTH;
 	
 	/* Read the frame length */
