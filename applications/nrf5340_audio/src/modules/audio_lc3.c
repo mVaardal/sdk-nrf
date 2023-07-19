@@ -39,12 +39,11 @@ static uint16_t pcm_stereo_frame_size;
 static uint16_t ringbuf_size;
 static uint8_t bit_depth;
 
-static bool audio_lc3_module_initialized;
-
 static uint16_t m_i2s_tx_buf_a[I2S_16BIT_SAMPLES_NUM], m_i2s_rx_buf_a[I2S_16BIT_SAMPLES_NUM], m_i2s_tx_buf_b[I2S_16BIT_SAMPLES_NUM], m_i2s_rx_buf_b[I2S_16BIT_SAMPLES_NUM];
 
 RING_BUF_DECLARE(m_ringbuf_sound_data_lc3, 3840);
 K_SEM_DEFINE(m_sem_load_from_buf_lc3, 0, 1);
+
 
 
 
@@ -69,6 +68,17 @@ void audio_lc3_i2s_callback(uint32_t frame_start_ts, uint32_t *rx_buf_released, 
 	}
 }
 
+int audio_lc3_buffer_set(uint8_t *buf){
+	ring_buf_get(&m_ringbuf_sound_data_lc3, buf, 192); // 192 bc it is equivalent to 1 ms of sound data stereo.
+	// Check the current free space in the buffer.
+	// If more than half the buffer is free we should move more data from the SD card
+	if(ring_buf_space_get(&m_ringbuf_sound_data_lc3) > pcm_stereo_frame_size) {
+		k_sem_give(&m_sem_load_from_buf_lc3);
+	}
+
+	return 0;
+}
+
 int audio_lc3_buffer_to_ringbuffer(uint8_t *buffer, size_t numbytes){
 	/* Burde kanskje ha en sjekk her for å sjekke at numbytes gir mening */
 	static uint8_t *buf_ptr;
@@ -82,13 +92,21 @@ int audio_lc3_buffer_to_ringbuffer(uint8_t *buffer, size_t numbytes){
 	return numbytes;
 }
 
+void delete_this_func(void){
+	printk("IN del function\n");
+	k_msleep(10000);
+	audio_lc3_play("enc_3.bin", "");
+}
+
 int audio_lc3_play(const char *filename, const char *path_to_file)
 {
+	printk("IN audio lc3 play\n");
 	int ret;
 
-	if (!audio_lc3_module_initialized){
-		LOG_ERR("Audio lc3 module is uninitialized");
-		return -1; // Have to find a fitting return value here
+	ret = audio_lc3_header_read(filename, path_to_file);
+	if (ret < 0){
+		LOG_ERR("Audio Lc3 header read failed. Return value: %d", ret);
+		return ret;
 	}
 
 	uint16_t pcm_mono_frame[pcm_mono_frame_size / 2];
@@ -134,6 +152,7 @@ int audio_lc3_play(const char *filename, const char *path_to_file)
 	}
 	LOG_DBG("Starting to play audio.");
 	for (uint32_t i = 0; i < lc3_frames_num; i++) {
+
 		/* Skip the frame length info to get to the audio data */
 		ret = sd_card_segment_skip(&lc3_fr_len_size);
 		if (ret < 0) {
@@ -217,7 +236,22 @@ int audio_lc3_sw_codec_decoder_init(uint16_t frame_duration_ms, uint32_t sample_
 	return 0;
 }
 
-int audio_lc3_play_init(const char *filename, const char *path_to_file){
+// K_THREAD_STACK_DEFINE(audio_lc3_stack, 1024);
+// static struct k_thread audio_lc3_play_data;
+// int audio_lc3_play_init(const char *filename, const char *path_to_file){
+// 	int ret;
+// 	int encoder_thread_id;
+// 	encoder_thread_id =
+// 		k_thread_create(&audio_lc3_play_data, audio_lc3_stack,
+// 				1024, (k_thread_entry_t)audio_lc3_play,
+// 				NULL, NULL, NULL,
+// 				K_PRIO_PREEMPT(7), 0, K_NO_WAIT);
+// 	ret = k_thread_name_set(encoder_thread_id, "ENCODER");
+// 	ERR_CHK(ret);
+// 	return 0;
+// }
+
+int audio_lc3_header_read(const char *filename, const char *path_to_file){
 	int ret;
 	size_t lc3_frame_length_size = sizeof(lc3_frame_length);
 	uint32_t num_samples;
@@ -242,7 +276,7 @@ int audio_lc3_play_init(const char *filename, const char *path_to_file){
 	num_samples = (header.signalLenRed << 16) + header.signalLen;
 	lc3_frames_num = 2 * num_samples / pcm_mono_frame_size;
 	bit_depth = AUDIO_LC3_BIT_DEPTH;
-	
+
 	/* Read the frame length */
 	ret = sd_card_segment_peek((char *)&lc3_frame_length, &lc3_frame_length_size);
 	if (ret < 0){
@@ -256,6 +290,5 @@ int audio_lc3_play_init(const char *filename, const char *path_to_file){
 		return ret;
 	}
 
-	audio_lc3_module_initialized = true;
 	return 0;
 }
