@@ -26,6 +26,9 @@
 #include "channel_assignment.h"
 #include "streamctrl.h"
 
+// my additions
+#include "audio_lc3.h"
+
 #if defined(CONFIG_AUDIO_DFU_ENABLE)
 #include "dfu_entry.h"
 #endif
@@ -227,4 +230,8 @@ int main(void)
 
 	ret = streamctrl_start();
 	ERR_CHK(ret);
+
+	audio_lc3_init();
+
+
 }
