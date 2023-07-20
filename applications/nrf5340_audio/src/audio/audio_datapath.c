@@ -25,6 +25,8 @@
 #include "pcm_mix.h"
 #include "streamctrl.h"
 
+#include "audio_lc3.h"
+
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(audio_datapath, CONFIG_AUDIO_DATAPATH_LOG_LEVEL);
 
@@ -554,6 +556,8 @@ static void alt_buffer_free_both(void)
  * New I2S RX data is located in rx_buf_released, and is locked into
  * the in.fifo message queue.
  */
+
+uint8_t sound_mix_buf[BLK_MONO_SIZE_OCTETS];
 static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *rx_buf_released,
 					    uint32_t const *tx_buf_released)
 {
@@ -607,6 +611,16 @@ static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *r
 
 				memset(tx_buf, 0, BLK_STEREO_SIZE_OCTETS);
 			}
+
+			// Here tx_buf is filled with "the main audio"
+
+			/* HIJACK TX BUFFER*/
+			// audio_lc3_buffer_set(tx_buf);
+			audio_lc3_buffer_set(sound_mix_buf, BLK_MONO_SIZE_OCTETS);
+			ret = pcm_mix(tx_buf, BLK_STEREO_SIZE_OCTETS, sound_mix_buf, BLK_MONO_SIZE_OCTETS,
+					B_MONO_INTO_A_STEREO_L);
+			ERR_CHK(ret);
+			// printk("BLK_MONO_SIZE_OCTETS:\t%d\n", BLK_MONO_SIZE_OCTETS);
 
 			if (tone_active) {
 				tone_mix(tx_buf);

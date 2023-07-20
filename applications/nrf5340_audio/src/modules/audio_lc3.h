@@ -9,6 +9,7 @@
 
 #include <zephyr/kernel.h>
 
-void audio_lc3_init();
+int audio_lc3_init();
+int audio_lc3_buffer_set(uint8_t *buf, size_t size);
 
 #endif

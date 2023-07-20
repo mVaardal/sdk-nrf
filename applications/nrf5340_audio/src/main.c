@@ -231,7 +231,8 @@ int main(void)
 	ret = streamctrl_start();
 	ERR_CHK(ret);
 
-	audio_lc3_init();
-
+	k_msleep(15000);
+	audio_lc3_init(); 
+	// audio_lc3_play("enc_2.bin", "");
 
 }
