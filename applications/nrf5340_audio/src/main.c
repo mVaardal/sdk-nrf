@@ -232,7 +232,5 @@ int main(void)
 	ERR_CHK(ret);
 
 	k_msleep(15000);
-	audio_lc3_init(); 
-	// audio_lc3_play("enc_2.bin", "");
-
+	audio_lc3_init();
 }
