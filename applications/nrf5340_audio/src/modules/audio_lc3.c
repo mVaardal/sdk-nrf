@@ -5,6 +5,7 @@
 #include "sw_codec_lc3.h"
 #include "hw_codec.h"
 #include "pcm_stream_channel_modifier.h"
+#include "pcm_mix.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(audio_lc3, 4);
@@ -13,6 +14,7 @@ LOG_MODULE_REGISTER(audio_lc3, 4);
 #define RING_BUF_SIZE 1920 // This can be modified both up and down
 #define AUDIO_CH_0 0
 #define AUDIO_LC3_STACK_SIZE 4096
+#define AUDIO_LC3_MIXER_STACK_SIZE 4096
 
 /*File structure of the LC3 encoded files*/
 typedef struct {
@@ -34,12 +36,48 @@ static uint16_t lc3_frames_num;
 static uint16_t pcm_mono_frame_size;
 
 RING_BUF_DECLARE(m_ringbuf_sound_data_lc3, RING_BUF_SIZE);
-K_SEM_DEFINE(m_sem_load_from_buf_lc3, 0, 1);
+K_SEM_DEFINE(m_sem_load_from_buf_lc3, 2, 2);
+// K_SEM_DEFINE(m_sem_load_from_buf_lc3, 0, 1);
+
 
 static struct k_thread audio_lc3_thread_data;
+static struct k_thread audio_lc3_mixer_thread_data;
 static k_tid_t audio_lc3_thread_id;
+static k_tid_t audio_lc3_mixer_thread_id;
 
 K_THREAD_STACK_DEFINE(audio_lc3_thread_stack, AUDIO_LC3_STACK_SIZE);
+K_THREAD_STACK_DEFINE(audio_lc3_mixer_thread_stack, AUDIO_LC3_STACK_SIZE);
+
+static bool start_mixing;
+static uint8_t *pcm_a;
+static size_t pcm_a_b_size;
+static uint8_t *pcm_b;
+static size_t pcm_b_size;
+
+
+int audio_lc3_prepare_next_tx_buf(uint8_t *next_tx_buf, size_t size){
+	pcm_a = next_tx_buf;
+	pcm_a_b_size = size;
+	start_mixing = true;
+	return 0;
+}
+
+int audio_lc3_pcm_mix(){
+	LOG_INF("In audio_lc3 pcm mix function");
+	int ret;
+
+	ring_buf_get(&m_ringbuf_sound_data_lc3, pcm_b, pcm_a_b_size);
+	if(ring_buf_space_get(&m_ringbuf_sound_data_lc3) > pcm_mono_frame_size) {
+		k_sem_give(&m_sem_load_from_buf_lc3);
+	}
+	ret = pcm_mix(pcm_a, pcm_a_b_size, pcm_b, pcm_a_b_size, B_MONO_INTO_A_STEREO_L);
+	if (ret < 0){
+		LOG_ERR("Pcm mix failed. Ret: %d", ret);
+		return ret;
+	}
+	start_mixing = false;
+	return 0;
+}
 
 int audio_lc3_buffer_set(uint8_t *buf, size_t size){
 	int numbytes;
@@ -171,15 +209,8 @@ static int audio_lc3_play(const char *filename, const char *path_to_file)
 			return ret;
 		}
 
-		// /* Convert from mono to stereo */
-		// ret = pscm_zero_pad(pcm_mono_frame, pcm_mono_write_size, 0, 16, pcm_stereo_frame, &pcm_stereo_write_size);
-		// if (ret < 0) {
-		// 	LOG_ERR("Error when converting to stereo. Return value: %d", ret);
-		// 	return ret;
-		// }
 		/* Wait until there is enough space in the ringbuffer */
 		k_sem_take(&m_sem_load_from_buf_lc3, K_FOREVER);
-		// while(ring_buf_space_get(&m_ringbuf_sound_data_lc3) < pcm_mono_frame_size){;}
 		audio_lc3_buffer_to_ringbuffer((char *)pcm_mono_frame, pcm_mono_write_size);
 	}
 
@@ -192,7 +223,18 @@ static int audio_lc3_play(const char *filename, const char *path_to_file)
 }
 
 static void audio_lc3_thread(void *arg1, void *arg2, void *arg3){
+	LOG_INF("Starting up audio lc3 thread");
 	audio_lc3_play("enc_3.bin", "");
+}
+
+static void audio_lc3_mixer_thread(void *arg1, void *arg2, void *arg3){
+	LOG_INF("Starting up audio lc3 mixer thread");
+	while(1){
+		if (start_mixing){
+			LOG_INF("Starting to mix!");
+			audio_lc3_pcm_mix();
+		}
+	}
 }
 
 
@@ -203,8 +245,25 @@ int audio_lc3_init(){
 		k_thread_create(&audio_lc3_thread_data, audio_lc3_thread_stack,
 				AUDIO_LC3_STACK_SIZE, (k_thread_entry_t)audio_lc3_thread,
 				NULL, NULL, NULL,
-				K_PRIO_PREEMPT(-10), 0, K_NO_WAIT);
+				K_PRIO_PREEMPT(4), 0, K_NO_WAIT);
 	ret = k_thread_name_set(audio_lc3_thread_id, "AUDIO_LC3");
+	if (ret < 0){
+		LOG_ERR("Failed");
+		return ret;
+	}
+	return 0;
+}
+
+int audio_lc3_pcm_mixer_init(){
+	printk("IN mixer thread init!!\n");
+	int ret;
+
+	audio_lc3_thread_id =
+		k_thread_create(&audio_lc3_mixer_thread_data, audio_lc3_mixer_thread_stack,
+				AUDIO_LC3_MIXER_STACK_SIZE, (k_thread_entry_t)audio_lc3_mixer_thread,
+				NULL, NULL, NULL,
+				K_PRIO_PREEMPT(3), 0, K_NO_WAIT);
+	ret = k_thread_name_set(audio_lc3_mixer_thread_id, "AUDIO_LC3_MIXER");
 	if (ret < 0){
 		LOG_ERR("Failed");
 		return ret;

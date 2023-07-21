@@ -227,10 +227,24 @@ int main(void)
 
 	ret = leds_set();
 	ERR_CHK(ret);
+	printk("Before streamctrl start\n");
 
 	ret = streamctrl_start();
 	ERR_CHK(ret);
-
+	printk("AFter streamctrl start\n");
 	k_msleep(20000);
-	audio_lc3_init();
+	printk("AFter sleep\n");
+	k_msleep(2000);
+
+	ret = audio_lc3_pcm_mixer_init();
+	if (ret < 0){
+		LOG_ERR("Something went wrong when trying to initialize audio lc3 mixer");
+	}
+	printk("After initializing audio lc3 pcm mixer\n");
+	ret = audio_lc3_init();
+	if (ret < 0){
+		LOG_ERR("Something went wrong when trying to initialize audio lc3");
+	}
+	printk("Audio lc3 init thread started\n");
+	k_msleep(3000);
 }

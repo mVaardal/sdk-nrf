@@ -560,6 +560,9 @@ static void alt_buffer_free_both(void)
 uint8_t sound_mix_buf[BLK_MONO_SIZE_OCTETS];
 uint32_t numbytes;
 uint32_t count = 0;
+
+// static uint8_t *next_tx_buf;
+
 static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *rx_buf_released,
 					    uint32_t const *tx_buf_released)
 {
@@ -574,11 +577,13 @@ static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *r
 
 	/********** I2S TX **********/
 	static uint8_t *tx_buf;
+	static uint8_t *next_tx_buf;
 
 	if (IS_ENABLED(CONFIG_STREAM_BIDIRECTIONAL) || (CONFIG_AUDIO_DEV == HEADSET)) {
 		if (tx_buf_released != NULL) {
 			/* Double buffered index */
 			uint32_t next_out_blk_idx = NEXT_IDX(ctrl_blk.out.cons_blk_idx);
+			uint32_t next_next_out_blk_idx = NEXT_IDX(next_next_out_blk_idx);
 
 			if (next_out_blk_idx != ctrl_blk.out.prod_blk_idx) {
 				/* Only increment if not in underrun condition */
@@ -590,7 +595,9 @@ static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *r
 				}
 
 				tx_buf = (uint8_t *)&ctrl_blk.out
-						 .fifo[next_out_blk_idx * BLK_STEREO_NUM_SAMPS];
+						 .fifo[next_out_blk_idx * BLK_STEREO_NUM_SAMPS]; // FIFO IS HERE
+				next_tx_buf = (uint8_t *)&ctrl_blk.out
+						 .fifo[next_next_out_blk_idx * BLK_STEREO_NUM_SAMPS]; // FIFO IS HERE
 
 			} else {
 				if (stream_state_get() == STATE_STREAMING) {
@@ -614,14 +621,18 @@ static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *r
 				memset(tx_buf, 0, BLK_STEREO_SIZE_OCTETS);
 			}
 
-			numbytes = audio_lc3_buffer_set(sound_mix_buf, BLK_MONO_SIZE_OCTETS);
-			if (count % 500 == 0){
-				printk("Numbytes written is:\t%d\n", numbytes);
-			}
-			count++;
-			ret = pcm_mix(tx_buf, BLK_STEREO_SIZE_OCTETS, sound_mix_buf, BLK_MONO_SIZE_OCTETS,
-					B_MONO_INTO_A_STEREO_L);
-			ERR_CHK(ret);
+			audio_lc3_prepare_next_tx_buf(next_tx_buf, BLK_MONO_SIZE_OCTETS); // Spille av neste gang, dette skal bli mikset
+
+			// audio_lc3_mixed_tx_buf_get(); // Spille av nå, har blitt mikset
+
+			// numbytes = audio_lc3_buffer_set(sound_mix_buf, BLK_MONO_SIZE_OCTETS);
+			// if (count % 500 == 0){
+			// 	printk("Numbytes written is:\t%d\n", numbytes);
+			// }
+			// count++;
+			// ret = pcm_mix(tx_buf, BLK_STEREO_SIZE_OCTETS, sound_mix_buf, BLK_MONO_SIZE_OCTETS,
+			// 		B_MONO_INTO_A_STEREO_L);
+			// ERR_CHK(ret);
 
 			if (tone_active) {
 				tone_mix(tx_buf);
