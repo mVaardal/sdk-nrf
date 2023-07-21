@@ -622,7 +622,7 @@ static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *r
 			ret = pcm_mix(tx_buf, BLK_STEREO_SIZE_OCTETS, sound_mix_buf, BLK_MONO_SIZE_OCTETS,
 					B_MONO_INTO_A_STEREO_L);
 			ERR_CHK(ret);
-			
+
 			if (tone_active) {
 				tone_mix(tx_buf);
 			}

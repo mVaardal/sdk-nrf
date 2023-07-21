@@ -10,9 +10,9 @@
 LOG_MODULE_REGISTER(audio_lc3, 4);
 
 #define AUDIO_LC3_DEFAULT_VOLUME 70
-#define RING_BUF_SIZE 5000 // This can be modified both up and down
+#define RING_BUF_SIZE 1920 // This can be modified both up and down
 #define AUDIO_CH_0 0
-#define AUDIO_LC3_STACK_SIZE 8192
+#define AUDIO_LC3_STACK_SIZE 4096
 
 /*File structure of the LC3 encoded files*/
 typedef struct {
@@ -192,7 +192,7 @@ static int audio_lc3_play(const char *filename, const char *path_to_file)
 }
 
 static void audio_lc3_thread(void *arg1, void *arg2, void *arg3){
-	audio_lc3_play("enc_2.bin", "");
+	audio_lc3_play("enc_3.bin", "");
 }
 
 
