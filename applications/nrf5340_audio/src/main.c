@@ -231,6 +231,6 @@ int main(void)
 	ret = streamctrl_start();
 	ERR_CHK(ret);
 
-	k_msleep(15000);
+	k_msleep(20000);
 	audio_lc3_init();
 }

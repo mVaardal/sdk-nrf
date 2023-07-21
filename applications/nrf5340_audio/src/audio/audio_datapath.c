@@ -558,6 +558,8 @@ static void alt_buffer_free_both(void)
  */
 
 uint8_t sound_mix_buf[BLK_MONO_SIZE_OCTETS];
+uint32_t numbytes;
+uint32_t count = 0;
 static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *rx_buf_released,
 					    uint32_t const *tx_buf_released)
 {
@@ -612,11 +614,15 @@ static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *r
 				memset(tx_buf, 0, BLK_STEREO_SIZE_OCTETS);
 			}
 
-			audio_lc3_buffer_set(sound_mix_buf, BLK_MONO_SIZE_OCTETS);
+			numbytes = audio_lc3_buffer_set(sound_mix_buf, BLK_MONO_SIZE_OCTETS);
+			if (count % 500 == 0){
+				printk("Numbytes written is:\t%d\n", numbytes);
+			}
+			count++;
 			ret = pcm_mix(tx_buf, BLK_STEREO_SIZE_OCTETS, sound_mix_buf, BLK_MONO_SIZE_OCTETS,
 					B_MONO_INTO_A_STEREO_L);
 			ERR_CHK(ret);
-
+			
 			if (tone_active) {
 				tone_mix(tx_buf);
 			}

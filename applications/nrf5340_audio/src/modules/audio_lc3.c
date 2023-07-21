@@ -4,14 +4,15 @@
 #include "sd_card.h"
 #include "sw_codec_lc3.h"
 #include "hw_codec.h"
+#include "pcm_stream_channel_modifier.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(audio_lc3, 4);
 
 #define AUDIO_LC3_DEFAULT_VOLUME 70
-#define RING_BUF_SIZE 3840 // This can be modified both up and down
+#define RING_BUF_SIZE 5000 // This can be modified both up and down
 #define AUDIO_CH_0 0
-#define AUDIO_LC3_STACK_SIZE 4096
+#define AUDIO_LC3_STACK_SIZE 8192
 
 /*File structure of the LC3 encoded files*/
 typedef struct {
@@ -41,12 +42,13 @@ static k_tid_t audio_lc3_thread_id;
 K_THREAD_STACK_DEFINE(audio_lc3_thread_stack, AUDIO_LC3_STACK_SIZE);
 
 int audio_lc3_buffer_set(uint8_t *buf, size_t size){
-	ring_buf_get(&m_ringbuf_sound_data_lc3, buf, size);
+	int numbytes;
+	numbytes = ring_buf_get(&m_ringbuf_sound_data_lc3, buf, size);
 	if(ring_buf_space_get(&m_ringbuf_sound_data_lc3) > pcm_mono_frame_size) {
 		k_sem_give(&m_sem_load_from_buf_lc3);
 	}
 
-	return 0;
+	return numbytes;
 }
 
 static int audio_lc3_buffer_to_ringbuffer(uint8_t *buffer, size_t numbytes){
@@ -118,6 +120,8 @@ static int audio_lc3_play(const char *filename, const char *path_to_file)
 
 	uint16_t pcm_mono_frame[pcm_mono_frame_size / 2];
 	uint16_t pcm_mono_write_size;
+	uint16_t pcm_stereo_frame[pcm_mono_frame_size];
+	size_t pcm_stereo_write_size;
 	uint16_t lc3_frame[lc3_frame_length];
 	size_t lc3_fr_len = lc3_frame_length; // Converting to size_t
 	size_t lc3_fr_len_size = sizeof(lc3_frame_length);
@@ -167,8 +171,15 @@ static int audio_lc3_play(const char *filename, const char *path_to_file)
 			return ret;
 		}
 
+		// /* Convert from mono to stereo */
+		// ret = pscm_zero_pad(pcm_mono_frame, pcm_mono_write_size, 0, 16, pcm_stereo_frame, &pcm_stereo_write_size);
+		// if (ret < 0) {
+		// 	LOG_ERR("Error when converting to stereo. Return value: %d", ret);
+		// 	return ret;
+		// }
 		/* Wait until there is enough space in the ringbuffer */
 		k_sem_take(&m_sem_load_from_buf_lc3, K_FOREVER);
+		// while(ring_buf_space_get(&m_ringbuf_sound_data_lc3) < pcm_mono_frame_size){;}
 		audio_lc3_buffer_to_ringbuffer((char *)pcm_mono_frame, pcm_mono_write_size);
 	}
 
@@ -192,7 +203,7 @@ int audio_lc3_init(){
 		k_thread_create(&audio_lc3_thread_data, audio_lc3_thread_stack,
 				AUDIO_LC3_STACK_SIZE, (k_thread_entry_t)audio_lc3_thread,
 				NULL, NULL, NULL,
-				K_PRIO_PREEMPT(CONFIG_ENCODER_THREAD_PRIO), 0, K_NO_WAIT);
+				K_PRIO_PREEMPT(-10), 0, K_NO_WAIT);
 	ret = k_thread_name_set(audio_lc3_thread_id, "AUDIO_LC3");
 	if (ret < 0){
 		LOG_ERR("Failed");
