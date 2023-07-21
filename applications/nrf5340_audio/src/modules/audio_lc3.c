@@ -2,16 +2,14 @@
 #include <stdint.h>
 #include <zephyr/sys/ring_buffer.h>
 #include "sd_card.h"
-#include "hw_codec.h"
 #include "sw_codec_lc3.h"
-#include "pcm_stream_channel_modifier.h"
-#include "audio_i2s.h"
+#include "hw_codec.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(audio_lc3, 4);
 
 #define AUDIO_LC3_DEFAULT_VOLUME 70
-#define RING_BUF_SIZE 1920 // This can be modified both up and down
+#define RING_BUF_SIZE 3840 // This can be modified both up and down
 #define AUDIO_CH_0 0
 #define AUDIO_LC3_STACK_SIZE 4096
 
@@ -53,6 +51,10 @@ int audio_lc3_buffer_set(uint8_t *buf, size_t size){
 
 static int audio_lc3_buffer_to_ringbuffer(uint8_t *buffer, size_t numbytes){
 	/* Burde kanskje ha en sjekk her for å sjekke at numbytes gir mening */
+	if (ring_buf_space_get(&m_ringbuf_sound_data_lc3) < numbytes){
+		LOG_ERR("Ringbuffer overflow");
+		return -EINVAL;
+	}
 	static uint8_t *buf_ptr;
 
 	numbytes = ring_buf_put_claim(&m_ringbuf_sound_data_lc3, &buf_ptr, numbytes);
@@ -170,12 +172,6 @@ static int audio_lc3_play(const char *filename, const char *path_to_file)
 		audio_lc3_buffer_to_ringbuffer((char *)pcm_mono_frame, pcm_mono_write_size);
 	}
 
-	ret = hw_codec_volume_mute();
-	if (ret < 0){
-		LOG_ERR("Error muting volume on hw codec. Return value: %d", ret);
-		return ret;
-	}
-
 	ret = sd_card_segment_close();
 	if (ret < 0){
 		LOG_ERR("Error when closing file. Return value: %d", ret);
@@ -185,7 +181,7 @@ static int audio_lc3_play(const char *filename, const char *path_to_file)
 }
 
 static void audio_lc3_thread(void *arg1, void *arg2, void *arg3){
-	audio_lc3_play("enc_3.bin", "");
+	audio_lc3_play("enc_2.bin", "");
 }
 
 
