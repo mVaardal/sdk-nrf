@@ -21,6 +21,8 @@
 #include "pcm_stream_channel_modifier.h"
 #include "audio_usb.h"
 #include "streamctrl.h"
+#include "pcm_mix.h"
+#include <hal/nrf_gpio.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(audio_system, CONFIG_AUDIO_SYSTEM_LOG_LEVEL);
@@ -90,7 +92,7 @@ static void audio_headset_configure(void)
 	}
 #endif /* (CONFIG_STREAM_BIDIRECTIONAL) */
 
-	sw_codec_cfg.decoder.num_ch = SW_CODEC_MONO;
+	sw_codec_cfg.decoder.num_ch = IS_ENABLED(CONFIG_LC3_PLAYBACK) ? 2 : SW_CODEC_MONO;
 	sw_codec_cfg.decoder.enabled = true;
 }
 
@@ -240,12 +242,11 @@ int audio_decode(void const *const encoded_data, size_t encoded_data_size, bool 
 	}
 
 	ret = sw_codec_decode(encoded_data, encoded_data_size, bad_frame, &pcm_raw_data,
-			      &pcm_block_size);
+			      &pcm_block_size, true);
 	if (ret) {
 		LOG_ERR("Failed to decode");
 		return ret;
 	}
-
 	/* Split decoded frame into CONFIG_FIFO_FRAME_SPLIT_NUM blocks */
 	for (int i = 0; i < CONFIG_FIFO_FRAME_SPLIT_NUM; i++) {
 		memcpy(tmp_pcm_raw_data[i], (char *)pcm_raw_data + (i * (BLOCK_SIZE_BYTES)),
@@ -303,11 +304,10 @@ void audio_system_start(void)
 	sw_codec_cfg.initialized = true;
 
 	if (sw_codec_cfg.encoder.enabled && encoder_thread_id == NULL) {
-		encoder_thread_id =
-			k_thread_create(&encoder_thread_data, encoder_thread_stack,
-					CONFIG_ENCODER_STACK_SIZE, (k_thread_entry_t)encoder_thread,
-					NULL, NULL, NULL,
-					K_PRIO_PREEMPT(CONFIG_ENCODER_THREAD_PRIO), 0, K_NO_WAIT);
+		encoder_thread_id = k_thread_create(
+			&encoder_thread_data, encoder_thread_stack, CONFIG_ENCODER_STACK_SIZE,
+			(k_thread_entry_t)encoder_thread, NULL, NULL, NULL,
+			K_PRIO_PREEMPT(CONFIG_ENCODER_THREAD_PRIO), 0, K_NO_WAIT);
 		ret = k_thread_name_set(encoder_thread_id, "ENCODER");
 		ERR_CHK(ret);
 	}

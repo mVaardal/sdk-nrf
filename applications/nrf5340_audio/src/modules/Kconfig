@@ -116,4 +116,9 @@ config BUTTON_PUBLISH_STACK_SIZE
 	default 300
 
 endmenu # Stack sizes
+menu "Lc3 playback"
+config LC3_PLAYBACK
+	bool "If true, lc3 playback is enabled"
+	default n
+endmenu # Lc3 playback
 endmenu # Modules
