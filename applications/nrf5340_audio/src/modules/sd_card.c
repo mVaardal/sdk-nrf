@@ -24,7 +24,7 @@ LOG_MODULE_REGISTER(sd_card, CONFIG_MODULE_SD_CARD_LOG_LEVEL);
 static const char *sd_root_path = "/SD:";
 static FATFS fat_fs;
 static bool sd_init_success;
-static volatile bool seg_read_started;
+static bool seg_read_started;
 static struct fs_file_t f_seg_read_entry;
 
 static struct fs_mount_t mnt_pt = {
@@ -32,12 +32,17 @@ static struct fs_mount_t mnt_pt = {
 	.fs_data = &fat_fs,
 };
 
-int sd_card_list_files(char *path, char *buf, size_t buf_size)
+int sd_card_list_files(const char *path, char *buf, size_t *buf_size)
 {
 	int ret;
 	struct fs_dir_t dirp;
 	static struct fs_dirent entry;
 	char abs_path_name[PATH_MAX_LEN + 1] = SD_ROOT_PATH;
+	size_t used_buf_size = 0;
+
+	if (seg_read_started) {
+		return -EPERM;
+	}
 
 	if (!sd_init_success) {
 		return -ENODEV;
@@ -65,7 +70,6 @@ int sd_card_list_files(char *path, char *buf, size_t buf_size)
 		}
 	}
 
-	size_t used_buf_size = 0;
 	while (true) {
 		ret = fs_readdir(&dirp, &entry);
 		if (ret) {
@@ -76,7 +80,7 @@ int sd_card_list_files(char *path, char *buf, size_t buf_size)
 			break;
 		}
 		if (buf != NULL) {
-			size_t remaining_buf_size = buf_size - used_buf_size;
+			size_t remaining_buf_size = *buf_size - used_buf_size;
 			ssize_t len = snprintk(
 				&buf[used_buf_size], remaining_buf_size, "[%s]\t%s\n",
 				entry.type == FS_DIR_ENTRY_DIR ? "DIR " : "FILE", entry.name);
@@ -96,10 +100,11 @@ int sd_card_list_files(char *path, char *buf, size_t buf_size)
 		return ret;
 	}
 
+	*buf_size = used_buf_size;
 	return 0;
 }
 
-int sd_card_write(char const *const filename, char const *const data, size_t *size)
+int sd_card_open_write_close(char const *const filename, char const *const data, size_t *size)
 {
 	int ret;
 	struct fs_file_t f_entry;
@@ -147,7 +152,7 @@ int sd_card_write(char const *const filename, char const *const data, size_t *si
 	return 0;
 }
 
-int sd_card_read(char const *const filename, char *const data, size_t *size)
+int sd_card_open_read_close(char const *const filename, char *const data, size_t *size)
 {
 	int ret;
 	struct fs_file_t f_entry;
@@ -191,28 +196,29 @@ int sd_card_read(char const *const filename, char *const data, size_t *size)
 	return 0;
 }
 
-int sd_card_segment_open(char const *const filename, char const *const path_to_file)
+int sd_card_open(char const *const filename, char const *const path_to_file)
 {
 	int ret;
 	char abs_path_name[PATH_MAX_LEN + 1] = SD_ROOT_PATH;
 
-	if (seg_read_started) {
-		LOG_ERR("Segment read has already started");
-		/* Which value should I return here? */
-		return -1;
+	if (!sd_init_success) {
+		return -ENODEV;
 	}
 
-	if (strlen(path_to_file) + strlen(abs_path_name) > PATH_MAX_LEN) {
+	if (seg_read_started) {
+		LOG_ERR("Segment read has already started");
+		return -EPERM;
+	}
+
+	if ((strlen(path_to_file) + strlen(abs_path_name)) > PATH_MAX_LEN) {
 		LOG_ERR("Filepath is too long");
 		return -EINVAL;
 	}
 
-	strcat(abs_path_name, path_to_file);
-	LOG_INF("abs path name:\t%s", abs_path_name);
+	size_t avilable_path_space = PATH_MAX_LEN - strlen(SD_ROOT_PATH);
 
-	if (!sd_init_success) {
-		return -ENODEV;
-	}
+	strncat(abs_path_name, path_to_file, avilable_path_space);
+	LOG_INF("abs path name:\t%s", abs_path_name);
 
 	if (strlen(filename) > CONFIG_FS_FATFS_MAX_LFN) {
 		LOG_ERR("Filename is too long");
@@ -233,7 +239,7 @@ int sd_card_segment_open(char const *const filename, char const *const path_to_f
 	return 0;
 }
 
-int sd_card_segment_read(char *const data, size_t *size)
+int sd_card_read(char *const data, size_t *size)
 {
 	int ret;
 
@@ -252,56 +258,7 @@ int sd_card_segment_read(char *const data, size_t *size)
 	return 0;
 }
 
-int sd_card_segment_peek(char *const data, size_t *size)
-{
-	int ret;
-	off_t offset;
-
-	if (!seg_read_started) {
-		return -EBUSY;
-	}
-
-	offset = fs_tell(&f_seg_read_entry);
-	if (offset < 0) {
-		LOG_ERR("Fs tell failed");
-		return offset;
-	}
-
-	ret = fs_read(&f_seg_read_entry, data, *size);
-	if (ret < 0) {
-		LOG_ERR("Read file failed");
-		return ret;
-	}
-
-	ret = fs_seek(&f_seg_read_entry, offset, 0);
-	if (ret < 0) {
-		LOG_ERR("Fs seek failed");
-		return ret;
-	}
-
-	*size = ret;
-
-	return 0;
-}
-
-int sd_card_segment_skip(const size_t *size)
-{
-	int ret;
-
-	if (!seg_read_started) {
-		return -EBUSY;
-	}
-
-	ret = fs_seek(&f_seg_read_entry, *size, FS_SEEK_CUR);
-	if (ret < 0) {
-		LOG_ERR("Fs seek failed. Return value: %d", ret);
-		return ret;
-	}
-
-	return 0;
-}
-
-int sd_card_segment_close(void)
+int sd_card_close(void)
 {
 	int ret;
 

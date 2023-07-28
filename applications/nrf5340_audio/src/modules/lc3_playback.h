@@ -9,8 +9,18 @@
 
 #include <zephyr/kernel.h>
 
+enum Audio_channels {
+	AUDIO_CH_NONE,
+	AUDIO_CH_MONO,
+	AUDIO_CH_STEREO
+};
+
+enum Sample_rates {
+	SAMPLE_RATE_48K = 48
+};
+
 /**@brief   Figure out whether or not the lc3_playback module is active
- * @retval  true, if active. false, otherwise
+ * @retval  true, if active. false, if not active
  */
 bool lc3_playback_is_active(void);
 

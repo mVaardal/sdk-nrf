@@ -95,7 +95,7 @@ int sw_codec_encode(void *pcm_data, size_t pcm_size, uint8_t **encoded_data, siz
  * @return	0 if success, error codes depends on sw_codec selected
  */
 int sw_codec_decode(uint8_t const *const encoded_data, size_t encoded_size, bool bad_frame,
-		    void **decoded_data, size_t *decoded_size, bool lc3_playback_is_active);
+		    void **decoded_data, size_t *decoded_size);
 
 /**@brief	Uninitialize sw_codec and free allocated space
  *

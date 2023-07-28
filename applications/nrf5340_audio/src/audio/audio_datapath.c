@@ -556,7 +556,6 @@ static void alt_buffer_free_both(void)
  * the in.fifo message queue.
  */
 
-uint8_t sound_mix_buf[BLK_MONO_SIZE_OCTETS];
 static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *rx_buf_released,
 					    uint32_t const *tx_buf_released)
 {
@@ -853,7 +852,7 @@ void audio_datapath_stream_out(const uint8_t *buf, size_t size, uint32_t sdu_ref
 	int ret;
 	size_t pcm_size;
 
-	ret = sw_codec_decode(buf, size, bad_frame, &ctrl_blk.decoded_data, &pcm_size, true);
+	ret = sw_codec_decode(buf, size, bad_frame, &ctrl_blk.decoded_data, &pcm_size);
 
 	if (ret) {
 		LOG_WRN("SW codec decode error: %d", ret);

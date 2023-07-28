@@ -84,6 +84,10 @@ module = MODULE_SD_CARD
 module-str = module-sd-card
 source "subsys/logging/Kconfig.template.log_config"
 
+module = MODULE_LC3_PLAYBACK
+module-str = module-lc3-playback
+source "subsys/logging/Kconfig.template.log_config"
+
 endmenu # Log levels
 
 #----------------------------------------------------------------------------#

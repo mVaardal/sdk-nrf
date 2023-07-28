@@ -22,7 +22,6 @@
 #include "audio_usb.h"
 #include "streamctrl.h"
 #include "pcm_mix.h"
-#include <hal/nrf_gpio.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(audio_system, CONFIG_AUDIO_SYSTEM_LOG_LEVEL);
@@ -242,7 +241,7 @@ int audio_decode(void const *const encoded_data, size_t encoded_data_size, bool 
 	}
 
 	ret = sw_codec_decode(encoded_data, encoded_data_size, bad_frame, &pcm_raw_data,
-			      &pcm_block_size, true);
+			      &pcm_block_size);
 	if (ret) {
 		LOG_ERR("Failed to decode");
 		return ret;
