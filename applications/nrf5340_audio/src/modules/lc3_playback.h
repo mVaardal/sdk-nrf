@@ -19,6 +19,8 @@ enum Sample_rates {
 	SAMPLE_RATE_48K = 48
 };
 
+int lc3_playback_play(const char *filename, const char *path_to_file);
+
 /**@brief   Figure out whether or not the lc3_playback module is active
  * @retval  true, if active. false, if not active
  */
