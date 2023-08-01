@@ -13,7 +13,7 @@ target_sources(app PRIVATE
 	       ${CMAKE_CURRENT_SOURCE_DIR}/led.c
 	       ${CMAKE_CURRENT_SOURCE_DIR}/power_meas.c
 	       ${CMAKE_CURRENT_SOURCE_DIR}/sd_card.c
-	       ${CMAKE_CURRENT_SOURCE_DIR}/lc3_playback.c
+	       ${CMAKE_CURRENT_SOURCE_DIR}/sd_card_playback.c
 )
 
 if (CONFIG_AUDIO_DFU_ENABLE)

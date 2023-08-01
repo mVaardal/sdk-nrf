@@ -84,8 +84,8 @@ module = MODULE_SD_CARD
 module-str = module-sd-card
 source "subsys/logging/Kconfig.template.log_config"
 
-module = MODULE_LC3_PLAYBACK
-module-str = module-lc3-playback
+module = MODULE_SD_CARD_PLAYBACK
+module-str = module-sd-card-playback
 source "subsys/logging/Kconfig.template.log_config"
 
 endmenu # Log levels
@@ -120,8 +120,8 @@ config BUTTON_PUBLISH_STACK_SIZE
 	default 300
 
 endmenu # Stack sizes
-menu "Lc3 playback"
-config LC3_PLAYBACK
+menu "SD card playback"
+config SD_CARD_PLAYBACK
 	bool "If true, lc3 playback is enabled"
 	default n
 endmenu # Lc3 playback

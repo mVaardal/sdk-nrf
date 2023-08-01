@@ -24,7 +24,7 @@
 #include "contin_array.h"
 #include "pcm_mix.h"
 #include "streamctrl.h"
-#include "lc3_playback.h"
+#include "sd_card_playback.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(audio_datapath, CONFIG_AUDIO_DATAPATH_LOG_LEVEL);
@@ -858,8 +858,8 @@ void audio_datapath_stream_out(const uint8_t *buf, size_t size, uint32_t sdu_ref
 		LOG_WRN("SW codec decode error: %d", ret);
 	}
 
-	if (IS_ENABLED(CONFIG_LC3_PLAYBACK) && lc3_playback_is_active()) {
-		lc3_playback_mix_with_stream(ctrl_blk.decoded_data, pcm_size);
+	if (IS_ENABLED(CONFIG_SD_CARD_PLAYBACK) && sd_card_playback_is_active()) {
+		sd_card_playback_mix_with_stream(ctrl_blk.decoded_data, pcm_size);
 	}
 
 	if (pcm_size != (BLK_STEREO_SIZE_OCTETS * NUM_BLKS_IN_FRAME)) {

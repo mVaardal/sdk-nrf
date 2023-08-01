@@ -39,8 +39,15 @@ enum sw_codec_select {
 
 enum sw_codec_num_ch {
 	SW_CODEC_ZERO_CHANNELS,
-	SW_CODEC_MONO,	 /* Only use one channel */
-	SW_CODEC_STEREO, /* Use both channels */
+	SW_CODEC_ONE_CHANNEL,	 /* Only use one channel */
+	SW_CODEC_TWO_CHANNELS,	 /* Use two channels */
+	SW_CODEC_THREE_CHANNELS, /* Use three channels */
+};
+
+enum sw_codec_num_inst {
+	SW_CODEC_ZERO_INST,
+	SW_CODEC_ONE_INST,
+	SW_CODEC_TWO_INST
 };
 
 struct sw_codec_encoder {
@@ -53,6 +60,7 @@ struct sw_codec_encoder {
 struct sw_codec_decoder {
 	bool enabled;
 	uint8_t num_ch;
+	uint8_t num_inst;
 	enum audio_channel audio_ch; /* Only used if channel mode is mono */
 };
 
@@ -95,7 +103,7 @@ int sw_codec_encode(void *pcm_data, size_t pcm_size, uint8_t **encoded_data, siz
  * @return	0 if success, error codes depends on sw_codec selected
  */
 int sw_codec_decode(uint8_t const *const encoded_data, size_t encoded_size, bool bad_frame,
-		    void **decoded_data, size_t *decoded_size);
+		    void **pcm_data, size_t *pcm_size);
 
 /**@brief	Uninitialize sw_codec and free allocated space
  *

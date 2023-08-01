@@ -54,7 +54,7 @@ static void audio_gateway_configure(void)
 
 #if (CONFIG_STREAM_BIDIRECTIONAL)
 	sw_codec_cfg.decoder.enabled = true;
-	sw_codec_cfg.decoder.num_ch = SW_CODEC_MONO;
+	sw_codec_cfg.decoder.num_ch = SW_CODEC_ONE_CHANNEL;
 #endif /* (CONFIG_STREAM_BIDIRECTIONAL) */
 
 	if (IS_ENABLED(CONFIG_SW_CODEC_LC3)) {
@@ -64,9 +64,9 @@ static void audio_gateway_configure(void)
 	}
 
 	if (IS_ENABLED(CONFIG_MONO_TO_ALL_RECEIVERS)) {
-		sw_codec_cfg.encoder.num_ch = SW_CODEC_MONO;
+		sw_codec_cfg.encoder.num_ch = SW_CODEC_ONE_CHANNEL;
 	} else {
-		sw_codec_cfg.encoder.num_ch = SW_CODEC_STEREO;
+		sw_codec_cfg.encoder.num_ch = SW_CODEC_TWO_CHANNELS;
 	}
 
 	sw_codec_cfg.encoder.enabled = true;
@@ -82,7 +82,7 @@ static void audio_headset_configure(void)
 
 #if (CONFIG_STREAM_BIDIRECTIONAL)
 	sw_codec_cfg.encoder.enabled = true;
-	sw_codec_cfg.encoder.num_ch = SW_CODEC_MONO;
+	sw_codec_cfg.encoder.num_ch = SW_CODEC_ONE_CHANNEL;
 
 	if (IS_ENABLED(CONFIG_SW_CODEC_LC3)) {
 		sw_codec_cfg.encoder.bitrate = CONFIG_LC3_BITRATE;
@@ -90,8 +90,12 @@ static void audio_headset_configure(void)
 		ERR_CHK_MSG(-EINVAL, "No codec selected");
 	}
 #endif /* (CONFIG_STREAM_BIDIRECTIONAL) */
-
-	sw_codec_cfg.decoder.num_ch = IS_ENABLED(CONFIG_LC3_PLAYBACK) ? 2 : SW_CODEC_MONO;
+	sw_codec_cfg.decoder.num_ch = SW_CODEC_ONE_CHANNEL;
+	sw_codec_cfg.decoder.num_inst = SW_CODEC_ONE_INST;
+	if (IS_ENABLED(CONFIG_SD_CARD_PLAYBACK)) {
+		sw_codec_cfg.decoder.num_ch += SW_CODEC_ONE_CHANNEL;
+		sw_codec_cfg.decoder.num_inst += SW_CODEC_ONE_INST;
+	}
 	sw_codec_cfg.decoder.enabled = true;
 }
 
