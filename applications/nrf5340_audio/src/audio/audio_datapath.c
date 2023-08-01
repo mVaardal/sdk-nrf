@@ -24,7 +24,7 @@
 #include "contin_array.h"
 #include "pcm_mix.h"
 #include "streamctrl.h"
-#include "lc3_playback.h"
+#include "sd_card_playback.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(audio_datapath, CONFIG_AUDIO_DATAPATH_LOG_LEVEL);
@@ -555,7 +555,6 @@ static void alt_buffer_free_both(void)
  * New I2S RX data is located in rx_buf_released, and is locked into
  * the in.fifo message queue.
  */
-
 static void audio_datapath_i2s_blk_complete(uint32_t frame_start_ts, uint32_t *rx_buf_released,
 					    uint32_t const *tx_buf_released)
 {
@@ -858,8 +857,8 @@ void audio_datapath_stream_out(const uint8_t *buf, size_t size, uint32_t sdu_ref
 		LOG_WRN("SW codec decode error: %d", ret);
 	}
 
-	if (IS_ENABLED(CONFIG_LC3_PLAYBACK) && lc3_playback_is_active()) {
-		lc3_playback_mix_with_stream(ctrl_blk.decoded_data, pcm_size);
+	if (IS_ENABLED(CONFIG_SD_CARD_PLAYBACK) && sd_card_playback_is_active()) {
+		sd_card_playback_mix_with_stream(ctrl_blk.decoded_data, pcm_size);
 	}
 
 	if (pcm_size != (BLK_STEREO_SIZE_OCTETS * NUM_BLKS_IN_FRAME)) {
@@ -867,6 +866,7 @@ void audio_datapath_stream_out(const uint8_t *buf, size_t size, uint32_t sdu_ref
 		/* Discard frame */
 		return;
 	}
+
 	/*** Add audio data to FIFO buffer ***/
 
 	int32_t num_blks_in_fifo = ctrl_blk.out.prod_blk_idx - ctrl_blk.out.cons_blk_idx;

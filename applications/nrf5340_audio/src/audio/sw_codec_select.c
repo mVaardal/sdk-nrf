@@ -57,7 +57,7 @@ int sw_codec_encode(void *pcm_data, size_t pcm_size, uint8_t **encoded_data, siz
 		}
 
 		switch (m_config.encoder.num_ch) {
-		case SW_CODEC_MONO: {
+		case SW_CODEC_ONE_CHANNEL: {
 			ret = sw_codec_lc3_enc_run(pcm_data_mono[m_config.encoder.audio_ch],
 						   pcm_block_size_mono, LC3_USE_BITRATE_FROM_INIT,
 						   0, sizeof(m_encoded_data), m_encoded_data,
@@ -67,7 +67,7 @@ int sw_codec_encode(void *pcm_data, size_t pcm_size, uint8_t **encoded_data, siz
 			}
 			break;
 		}
-		case SW_CODEC_STEREO: {
+		case SW_CODEC_TWO_CHANNELS: {
 			ret = sw_codec_lc3_enc_run(pcm_data_mono[AUDIO_CH_L], pcm_block_size_mono,
 						   LC3_USE_BITRATE_FROM_INIT, AUDIO_CH_L,
 						   sizeof(m_encoded_data), m_encoded_data,
@@ -127,32 +127,10 @@ int sw_codec_decode(uint8_t const *const encoded_data, size_t encoded_size, bool
 		/* Typically used for right channel if stereo signal */
 		char pcm_data_mono_right[PCM_NUM_BYTES_MONO] = {0};
 		/*  NB! For now, playing stereo files from SD card is unsupported */
-		if (IS_ENABLED(CONFIG_LC3_PLAYBACK)) {
-			if (bad_frame && IS_ENABLED(CONFIG_SW_CODEC_OVERRIDE_PLC)) {
-				memset(pcm_data_mono, 0, PCM_NUM_BYTES_MONO);
-				pcm_size_session = PCM_NUM_BYTES_MONO;
-			} else {
-				ret = sw_codec_lc3_dec_run(
-					encoded_data, encoded_size, LC3_PCM_NUM_BYTES_MONO, 0,
-					pcm_data_mono, (uint16_t *)&pcm_size_session, bad_frame);
-				if (ret) {
-					return ret;
-				}
-			}
-
-			/* For now, i2s is only stereo, so in order to send
-			 * just one channel, we need to insert 0 for the
-			 * other channel
-			 */
-			ret = pscm_zero_pad(pcm_data_mono, pcm_size_session,
-					    m_config.decoder.audio_ch, CONFIG_AUDIO_BIT_DEPTH_BITS,
-					    pcm_data_stereo, &pcm_size_stereo);
-			if (ret) {
-				return ret;
-			}
-		} else {
+		switch (m_config.decoder.num_inst) {
+		case SW_CODEC_ONE_INST:
 			switch (m_config.decoder.num_ch) {
-			case SW_CODEC_MONO: {
+			case SW_CODEC_ONE_CHANNEL: {
 				if (bad_frame && IS_ENABLED(CONFIG_SW_CODEC_OVERRIDE_PLC)) {
 					memset(pcm_data_mono, 0, PCM_NUM_BYTES_MONO);
 					pcm_size_session = PCM_NUM_BYTES_MONO;
@@ -179,7 +157,7 @@ int sw_codec_decode(uint8_t const *const encoded_data, size_t encoded_size, bool
 				}
 				break;
 			}
-			case SW_CODEC_STEREO: {
+			case SW_CODEC_TWO_CHANNELS: {
 				if (bad_frame && IS_ENABLED(CONFIG_SW_CODEC_OVERRIDE_PLC)) {
 					memset(pcm_data_mono, 0, PCM_NUM_BYTES_MONO);
 					memset(pcm_data_mono_right, 0, PCM_NUM_BYTES_MONO);
@@ -216,6 +194,78 @@ int sw_codec_decode(uint8_t const *const encoded_data, size_t encoded_size, bool
 					m_config.encoder.num_ch);
 				return -ENODEV;
 			}
+			break;
+		case SW_CODEC_TWO_INST:
+			switch (m_config.decoder.num_ch) {
+			case SW_CODEC_TWO_CHANNELS:
+				/* For now, sd_card_playback is only supported for mono data from
+				 * both SD card and BT stream
+				 */
+				if (bad_frame && IS_ENABLED(CONFIG_SW_CODEC_OVERRIDE_PLC)) {
+					memset(pcm_data_mono, 0, PCM_NUM_BYTES_MONO);
+					pcm_size_session = PCM_NUM_BYTES_MONO;
+				} else {
+					ret = sw_codec_lc3_dec_run(
+						encoded_data, encoded_size, LC3_PCM_NUM_BYTES_MONO,
+						0, pcm_data_mono, (uint16_t *)&pcm_size_session,
+						bad_frame);
+					if (ret) {
+						return ret;
+					}
+				}
+
+				/* For now, i2s is only stereo, so in order to send
+				 * just one channel, we need to insert 0 for the
+				 * other channel
+				 */
+				ret = pscm_zero_pad(pcm_data_mono, pcm_size_session,
+						    m_config.decoder.audio_ch,
+						    CONFIG_AUDIO_BIT_DEPTH_BITS, pcm_data_stereo,
+						    &pcm_size_stereo);
+				if (ret) {
+					return ret;
+				}
+				break;
+			case SW_CODEC_THREE_CHANNELS:
+				if (bad_frame && IS_ENABLED(CONFIG_SW_CODEC_OVERRIDE_PLC)) {
+					memset(pcm_data_mono, 0, PCM_NUM_BYTES_MONO);
+					memset(pcm_data_mono_right, 0, PCM_NUM_BYTES_MONO);
+					pcm_size_session = PCM_NUM_BYTES_MONO;
+				} else {
+					/* Decode left channel */
+					ret = sw_codec_lc3_dec_run(
+						encoded_data, encoded_size / 2,
+						LC3_PCM_NUM_BYTES_MONO, AUDIO_CH_L, pcm_data_mono,
+						(uint16_t *)&pcm_size_session, bad_frame);
+					if (ret) {
+						return ret;
+					}
+					/* Decode right channel */
+					ret = sw_codec_lc3_dec_run(
+						(encoded_data + (encoded_size / 2)),
+						encoded_size / 2, LC3_PCM_NUM_BYTES_MONO,
+						AUDIO_CH_R, pcm_data_mono_right,
+						(uint16_t *)&pcm_size_session, bad_frame);
+					if (ret) {
+						return ret;
+					}
+				}
+				ret = pscm_combine(pcm_data_mono, pcm_data_mono_right,
+						   pcm_size_session, CONFIG_AUDIO_BIT_DEPTH_BITS,
+						   pcm_data_stereo, &pcm_size_stereo);
+				if (ret) {
+					return ret;
+				}
+				break;
+			default:
+				LOG_ERR("Unsupported number of channels. Inst: 2\n");
+				break;
+			}
+			break;
+		default:
+			LOG_ERR("Unsupported number of decoder instances. Dec inst: %d",
+				m_config.decoder.num_inst);
+			return -ENODEV;
 		}
 		*decoded_size = pcm_size_stereo;
 		*decoded_data = pcm_data_stereo;
