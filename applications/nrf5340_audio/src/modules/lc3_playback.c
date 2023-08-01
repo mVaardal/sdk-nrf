@@ -1,6 +1,7 @@
 #include "lc3_playback.h"
 #include <stdint.h>
 #include <zephyr/sys/ring_buffer.h>
+#include <zephyr/shell/shell.h>
 #include "sd_card.h"
 #include "hw_codec.h"
 #include "sw_codec_lc3.h"
@@ -15,6 +16,8 @@ LOG_MODULE_REGISTER(lc3_playback, CONFIG_MODULE_LC3_PLAYBACK_LOG_LEVEL);
 
 #define RING_BUF_SIZE_1920_BYTES 1920
 #define LC3_PLAYBACK_STACK_SIZE	 4096
+#define MAX_FILENAME_LEN 32
+#define MAX_PATH_LEN 260
 
 /*File structure of the LC3 encoded files*/
 struct lc3_binary_hdr_t {
@@ -29,11 +32,15 @@ struct lc3_binary_hdr_t {
 	uint16_t signal_len_msb; /* Number of samples in signal, 16 MSB (>> 16) */
 };
 
+enum Audio_formats{
+	WAV,
+	LC3
+};
+
 RING_BUF_DECLARE(m_ringbuf_sound_data_lc3, RING_BUF_SIZE_1920_BYTES);
 K_SEM_DEFINE(m_sem_load_from_buf_lc3, 1, 1);
 K_MUTEX_DEFINE(mtx_ringbuf);
-K_SEM_DEFINE(m_sem_play_audiostream_from_file, 0, 1);
-K_SEM_DEFINE(m_sem_stop_audiostream_from_file, 0, 1);
+K_SEM_DEFINE(m_sem_playback, 0, 2);
 K_THREAD_STACK_DEFINE(lc3_playback_thread_stack, LC3_PLAYBACK_STACK_SIZE);
 
 static struct lc3_binary_hdr_t lc3_file_header;
@@ -45,6 +52,9 @@ static uint16_t lc3_frames_num;
 static uint16_t lc3_frame_length;
 static size_t lc3_frame_length_size = 2;
 static uint16_t pcm_mono_write_size;
+static enum Audio_formats playback_file_format;
+static char *playback_file_name;
+static char playback_file_path[MAX_PATH_LEN] = "";
 
 bool lc3_playback_is_active(void)
 {
@@ -113,7 +123,7 @@ static int lc3_playback_header_read(const char *filename, const char *path_to_fi
 	return 0;
 }
 
-int lc3_playback_play(const char *filename, const char *path_to_file)
+int lc3_playback_play_lc3(const char *filename, const char *path_to_file)
 {
 	int ret;
 
@@ -128,8 +138,36 @@ int lc3_playback_play(const char *filename, const char *path_to_file)
 			 ((lc3_file_header.signal_len_msb << 16) + lc3_file_header.signal_len_lsb) /
 			 pcm_frame_size;
 
-	k_sem_give(&m_sem_play_audiostream_from_file);
-	k_sem_take(&m_sem_stop_audiostream_from_file, K_FOREVER);
+	uint8_t pcm_mono_frame[pcm_frame_size];
+
+	lc3_playback_active = true;
+	for (uint32_t i = 0; i < lc3_frames_num; i++) {
+		/* Skip the frame length info to get to the audio data */
+		ret = sd_card_read((char *)&lc3_frame_length, &lc3_frame_length_size);
+		if (ret < 0) {
+			LOG_ERR("Error when trying to skip file on SD card. Return value: %d", ret);
+			return ret;
+		}
+		uint8_t lc3_frame[lc3_frame_length];
+		size_t lc3_fr_len = lc3_frame_length;
+		/* Read the audio data frame to be encoded */
+		ret = sd_card_read((char *)lc3_frame, &lc3_fr_len);
+		if (ret < 0) {
+			LOG_ERR("Something went wrong when reading from SD card. Return value: %d",
+				ret);
+			return ret;
+		}
+		/* Decode audio data frame*/
+		ret = sw_codec_lc3_dec_run((char *)lc3_frame, lc3_frame_length, pcm_frame_size, 1,
+					   pcm_mono_frame, &pcm_mono_write_size, false);
+		if (ret < 0) {
+			LOG_ERR("Error when running decoder. Return value: %d\n", ret);
+			return ret;
+		}
+		/* Wait until there is enough space in the ringbuffer */
+		k_sem_take(&m_sem_load_from_buf_lc3, K_FOREVER);
+		lc3_playback_buffer_to_ringbuffer((char *)pcm_mono_frame, pcm_mono_write_size);
+	}
 	ret = sd_card_close();
 	if (ret < 0) {
 		LOG_ERR("Error when closing file. Return value: %d", ret);
@@ -181,51 +219,23 @@ static int lc3_playback_play_wav(const char *filename, const char *path_to_file,
 	return 0;
 }
 
-
-int lc3_playback_play_lc3(){
-	int ret;
-	uint8_t pcm_mono_frame[pcm_frame_size];
-
-	lc3_playback_active = true;
-	for (uint32_t i = 0; i < lc3_frames_num; i++) {
-		/* Skip the frame length info to get to the audio data */
-		ret = sd_card_read((char *)&lc3_frame_length, &lc3_frame_length_size);
-		if (ret < 0) {
-			LOG_ERR("Error when trying to skip file on SD card. Return value: %d", ret);
-			return ret;
-		}
-		uint8_t lc3_frame[lc3_frame_length];
-		size_t lc3_fr_len = lc3_frame_length;
-		/* Read the audio data frame to be encoded */
-		ret = sd_card_read((char *)lc3_frame, &lc3_fr_len);
-		if (ret < 0) {
-			LOG_ERR("Something went wrong when reading from SD card. Return value: %d",
-				ret);
-			return ret;
-		}
-		/* Decode audio data frame*/
-		ret = sw_codec_lc3_dec_run((char *)lc3_frame, lc3_frame_length, pcm_frame_size, 1,
-					   pcm_mono_frame, &pcm_mono_write_size, false);
-		if (ret < 0) {
-			LOG_ERR("Error when running decoder. Return value: %d\n", ret);
-			return ret;
-		}
-		/* Wait until there is enough space in the ringbuffer */
-		k_sem_take(&m_sem_load_from_buf_lc3, K_FOREVER);
-		lc3_playback_buffer_to_ringbuffer((char *)pcm_mono_frame, pcm_mono_write_size);
-	}
-	return 0;
-}
-
 static void lc3_playback_thread(void *arg1, void *arg2, void *arg3)
 {
 	while (!sw_codec_is_initialized()) {
 		k_msleep(100);
 	}
-	k_sem_take(&m_sem_play_audiostream_from_file, K_FOREVER);
-	// lc3_playback_play_wav("whitney_48k_mono.wav", "", 10, 16, SAMPLE_RATE_48K, AUDIO_CH_MONO);
-	lc3_playback_play_lc3();
-	k_sem_give(&m_sem_stop_audiostream_from_file);
+	while (1){
+		k_sem_take(&m_sem_playback, K_FOREVER);
+		switch (playback_file_format){
+		case WAV:
+			lc3_playback_play_wav(playback_file_name, playback_file_path, 10, 16, SAMPLE_RATE_48K, AUDIO_CH_MONO);
+			break;
+		case LC3:
+			lc3_playback_play_lc3(playback_file_name, playback_file_path);
+			break;
+		}
+		k_sem_give(&m_sem_playback);
+	}
 }
 
 int lc3_playback_init(void)
@@ -243,3 +253,31 @@ int lc3_playback_init(void)
 	}
 	return 0;
 }
+
+/* Shell functions */
+static int cmd_play_wav_file(const struct shell *shell, size_t argc, char **argv)
+{
+	playback_file_format = WAV;
+	playback_file_name = argv[1];
+	k_sem_give(&m_sem_playback);
+	return 0;
+}
+
+static int cmd_play_lc3_file(const struct shell *shell, size_t argc, char **argv)
+{
+	playback_file_format = LC3;
+	playback_file_name = argv[1];
+	k_sem_give(&m_sem_playback);
+	return 0;
+}
+
+
+/* Creating subcommands (level 1 command) array for command "demo". */
+SHELL_STATIC_SUBCMD_SET_CREATE(lc3_playback_cmd,
+					SHELL_COND_CMD(CONFIG_SHELL, play_lc3, NULL, "Play lc3 file.",
+					      cmd_play_lc3_file),
+					SHELL_COND_CMD(CONFIG_SHELL, play_wav, NULL, "Play wav file.",
+					      cmd_play_wav_file),
+			       SHELL_SUBCMD_SET_END);
+/* Creating root (level 0) command "demo" without a handler */
+SHELL_CMD_REGISTER(lc3_playback, &lc3_playback_cmd, "Play lc3 files from sd card", NULL);
