@@ -33,7 +33,7 @@ struct lc3_binary_hdr_t {
 	uint16_t signal_len_msb; /* Number of samples in signal, 16 MSB (>> 16) */
 };
 
-enum Audio_formats {
+enum audio_formats {
 	WAV,
 	LC3
 };
@@ -53,10 +53,15 @@ static k_tid_t sd_card_playback_thread_id;
 static uint16_t lc3_frames_num;
 static uint16_t lc3_frame_length;
 static size_t lc3_frame_length_size = 2;
-static enum Audio_formats playback_file_format;
+static enum audio_formats playback_file_format;
 static char *playback_file_name;
 static char playback_file_path[MAX_PATH_LEN] = "";
 static struct fs_file_t f_seg_read_entry;
+
+static uint32_t playback_frame_duration_ms;
+static uint8_t playback_bit_depth;
+static enum sd_playback_sample_rates playback_sample_rate;
+static enum sd_playback_num_ch playback_audio_ch;
 
 bool sd_card_playback_is_active(void)
 {
@@ -125,11 +130,11 @@ static int sd_card_playback_header_read(const char *filename)
 	return 0;
 }
 
-int sd_card_playback_thread_play_lc3(const char *filename)
+int sd_card_playback_thread_play_lc3()
 {
 	int ret;
 
-	ret = sd_card_playback_header_read(filename);
+	ret = sd_card_playback_header_read(playback_file_name);
 	if (ret < 0) {
 		LOG_ERR("Audio Lc3 header read failed. Return value: %d", ret);
 		return ret;
@@ -180,17 +185,14 @@ int sd_card_playback_thread_play_lc3(const char *filename)
 	return 0;
 }
 
-static int sd_card_playback_thread_play_wav(const char *filename, uint32_t frame_duration_ms,
-					    uint8_t bit_depth,
-					    enum sd_playback_sample_rates sample_rate,
-					    enum sd_playback_num_ch audio_ch)
+static int sd_card_playback_thread_play_wav()
 {
 	int ret;
 
-	size_t pcm_wav_mono_frame_size = frame_duration_ms * sample_rate * bit_depth / 8;
+	size_t pcm_wav_mono_frame_size = playback_frame_duration_ms * playback_sample_rate * playback_bit_depth / 8;
 	pcm_frame_size = pcm_wav_mono_frame_size;
 	uint8_t pcm_wav_mono_frame[pcm_wav_mono_frame_size];
-	ret = sd_card_open(filename, &f_seg_read_entry);
+	ret = sd_card_open(playback_file_name, &f_seg_read_entry);
 	if (ret < 0) {
 		LOG_ERR("Error when trying to open file on SD card. Return value: %d", ret);
 		return ret;
@@ -223,10 +225,17 @@ static int sd_card_playback_thread_play_wav(const char *filename, uint32_t frame
 	return 0;
 }
 
-void sd_card_playback_wav(char *filename)
+void sd_card_playback_wav(char *filename, uint32_t frame_duration_ms,
+				uint8_t bit_depth,
+				enum sd_playback_sample_rates sample_rate,
+				enum sd_playback_num_ch audio_ch)
 {
 	playback_file_format = WAV;
 	playback_file_name = filename;
+	playback_frame_duration_ms = frame_duration_ms;
+	playback_bit_depth = bit_depth;
+	playback_sample_rate = sample_rate;
+	playback_audio_ch = audio_ch;
 	k_sem_give(&m_sem_playback);
 }
 
@@ -279,7 +288,7 @@ static int cmd_play_wav_file(const struct shell *shell, size_t argc, char **argv
 
 	strcat(file_loc, playback_file_path);
 	strcat(file_loc, argv[1]);
-	sd_card_playback_wav(file_loc);
+	sd_card_playback_wav(file_loc, 10, 16, SAMPLE_RATE_48K, AUDIO_CH_MONO);
 	return 0;
 }
 

@@ -25,7 +25,10 @@ enum sd_playback_sample_rates {
 /**@brief   Play audio from .wav file from SD card
  * @param[in] filename Name of file to be played. Path from root of SD card is accepted
  */
-void sd_card_playback_wav(char *filename);
+void sd_card_playback_wav(char *filename, uint32_t frame_duration_ms,
+				uint8_t bit_depth,
+				enum sd_playback_sample_rates sample_rate,
+				enum sd_playback_num_ch audio_ch);
 
 /**@brief   Play audio from .wav file from SD card
  * @param[in] filename Name of file to be played. Path from root of SD card is accepted
