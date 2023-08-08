@@ -63,11 +63,6 @@ static uint8_t playback_bit_depth;
 static enum sd_playback_sample_rates playback_sample_rate;
 static enum sd_playback_num_ch playback_audio_ch;
 
-bool sd_card_playback_is_active(void)
-{
-	return sd_card_playback_active;
-}
-
 static int sd_card_playback_buffer_set(uint8_t *buf, size_t size)
 {
 	k_mutex_lock(&mtx_ringbuf, K_FOREVER);
@@ -76,20 +71,6 @@ static int sd_card_playback_buffer_set(uint8_t *buf, size_t size)
 	if (ring_buf_space_get(&m_ringbuf_sound_data_lc3) >= pcm_frame_size) {
 		k_sem_give(&m_sem_load_from_buf_lc3);
 	}
-	return 0;
-}
-
-int sd_card_playback_mix_with_stream(void *const pcm_a, size_t pcm_a_size)
-{
-	int ret;
-	uint8_t pcm_b[pcm_frame_size];
-
-	ret = sd_card_playback_buffer_set(pcm_b, pcm_frame_size);
-	if (ret < 0) {
-		LOG_ERR("Error when loading pcm data into buffer. Ret: %d", ret);
-		return ret;
-	}
-	pcm_mix(pcm_a, pcm_a_size, pcm_b, pcm_frame_size, B_MONO_INTO_A_STEREO_L);
 	return 0;
 }
 
@@ -130,7 +111,7 @@ static int sd_card_playback_header_read(const char *filename)
 	return 0;
 }
 
-int sd_card_playback_thread_play_lc3()
+static int sd_card_playback_thread_play_lc3()
 {
 	int ret;
 
@@ -225,6 +206,30 @@ static int sd_card_playback_thread_play_wav()
 	return 0;
 }
 
+static void sd_card_playback_thread(void *arg1, void *arg2, void *arg3)
+{
+	while (!sw_codec_is_initialized()) {
+		k_msleep(100);
+	}
+	while (1) {
+		k_sem_take(&m_sem_playback, K_FOREVER);
+		switch (playback_file_format) {
+		case WAV:
+			sd_card_playback_thread_play_wav(playback_file_name, 10, 16,
+							 SAMPLE_RATE_48K, AUDIO_CH_MONO);
+			break;
+		case LC3:
+			sd_card_playback_thread_play_lc3(playback_file_name);
+			break;
+		}
+	}
+}
+
+bool sd_card_playback_is_active(void)
+{
+	return sd_card_playback_active;
+}
+
 void sd_card_playback_wav(char *filename, uint32_t frame_duration_ms,
 				uint8_t bit_depth,
 				enum sd_playback_sample_rates sample_rate,
@@ -246,23 +251,18 @@ void sd_card_playback_lc3(char *filename)
 	k_sem_give(&m_sem_playback);
 }
 
-static void sd_card_playback_thread(void *arg1, void *arg2, void *arg3)
+int sd_card_playback_mix_with_stream(void *const pcm_a, size_t pcm_a_size)
 {
-	while (!sw_codec_is_initialized()) {
-		k_msleep(100);
+	int ret;
+	uint8_t pcm_b[pcm_frame_size];
+
+	ret = sd_card_playback_buffer_set(pcm_b, pcm_frame_size);
+	if (ret < 0) {
+		LOG_ERR("Error when loading pcm data into buffer. Ret: %d", ret);
+		return ret;
 	}
-	while (1) {
-		k_sem_take(&m_sem_playback, K_FOREVER);
-		switch (playback_file_format) {
-		case WAV:
-			sd_card_playback_thread_play_wav(playback_file_name, 10, 16,
-							 SAMPLE_RATE_48K, AUDIO_CH_MONO);
-			break;
-		case LC3:
-			sd_card_playback_thread_play_lc3(playback_file_name);
-			break;
-		}
-	}
+	pcm_mix(pcm_a, pcm_a_size, pcm_b, pcm_frame_size, B_MONO_INTO_A_STEREO_L);
+	return 0;
 }
 
 int sd_card_playback_init(void)
@@ -334,6 +334,24 @@ static int cmd_list_files(const struct shell *shell, size_t argc, char **argv)
 	return 0;
 }
 
+static int cmd_open_close_file(const struct shell *shell, size_t argc, char **argv)
+{
+	int ret;
+	struct fs_file_t test_ptr;
+	char buf;
+	size_t sizeofbuf = 100;
+
+	ret = sd_card_open("dog_barking.wav", &test_ptr);
+	if (ret < 0) {
+		shell_print(shell, "Something went wrong!\n");
+		return ret;
+	}
+	ret = sd_card_read(&buf, &sizeofbuf, &test_ptr);
+	ret = sd_card_close(&test_ptr);
+	LOG_DBG("Open close successfully performed!");
+	return 0;
+}
+
 /* Creating subcommands (level 1 command) array for command "demo". */
 SHELL_STATIC_SUBCMD_SET_CREATE(
 	sd_card_playback_cmd,
@@ -341,6 +359,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
 	SHELL_COND_CMD(CONFIG_SHELL, play_wav, NULL, "Play wav file.", cmd_play_wav_file),
 	SHELL_COND_CMD(CONFIG_SHELL, cd, NULL, "Change directory. ", cmd_change_dir),
 	SHELL_COND_CMD(CONFIG_SHELL, list_files, NULL, "List files ", cmd_list_files),
+	SHELL_COND_CMD(CONFIG_SHELL, open_file, NULL, "Open file ", cmd_open_close_file),
 	SHELL_SUBCMD_SET_END);
 /* Creating root (level 0) command "demo" without a handler */
 SHELL_CMD_REGISTER(sd_card_playback, &sd_card_playback_cmd, "Play audio files from SD card", NULL);

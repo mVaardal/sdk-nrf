@@ -24,19 +24,25 @@ LOG_MODULE_REGISTER(sd_card, CONFIG_MODULE_SD_CARD_LOG_LEVEL);
 static const char *sd_root_path = "/SD:";
 static FATFS fat_fs;
 static bool sd_init_success;
+static bool sd_read_ongoing;
 
 static struct fs_mount_t mnt_pt = {
 	.type = FS_FATFS,
 	.fs_data = &fat_fs,
 };
 
-int sd_card_list_files(const char *path, char *buf, size_t *buf_size)
+int sd_card_list_files(char const *const path, char *buf, size_t *buf_size)
 {
 	int ret;
 	struct fs_dir_t dirp;
 	static struct fs_dirent entry;
 	char abs_path_name[PATH_MAX_LEN + 1] = SD_ROOT_PATH;
 	size_t used_buf_size = 0;
+
+	if (sd_read_ongoing){
+		LOG_ERR("SD read ongoing");
+		return -EPERM;
+	}
 
 	if (!sd_init_success) {
 		return -ENODEV;
@@ -64,7 +70,7 @@ int sd_card_list_files(const char *path, char *buf, size_t *buf_size)
 		}
 	}
 
-	while (true) {
+	while (1) {
 		ret = fs_readdir(&dirp, &entry);
 		if (ret) {
 			return ret;
@@ -78,12 +84,13 @@ int sd_card_list_files(const char *path, char *buf, size_t *buf_size)
 			ssize_t len = snprintk(
 				&buf[used_buf_size], remaining_buf_size, "[%s]\t%s\n",
 				entry.type == FS_DIR_ENTRY_DIR ? "DIR " : "FILE", entry.name);
-			used_buf_size += len;
 
-			if ((len < 0) || (len >= remaining_buf_size)) {
+			if (len >= remaining_buf_size) {
 				LOG_ERR("Failed to append to buffer, error: %d", len);
 				return -EINVAL;
 			}
+
+			used_buf_size += len;
 		}
 		LOG_INF("[%s] %s", entry.type == FS_DIR_ENTRY_DIR ? "DIR " : "FILE", entry.name);
 	}
@@ -146,7 +153,7 @@ int sd_card_open_write_close(char const *const filename, char const *const data,
 	return 0;
 }
 
-int sd_card_open_read_close(char const *const filename, char *const data, size_t *size)
+int sd_card_open_read_close(char const *const filename, char *const buf, size_t *size)
 {
 	int ret;
 	struct fs_file_t f_entry;
@@ -170,7 +177,7 @@ int sd_card_open_read_close(char const *const filename, char *const data, size_t
 		return ret;
 	}
 
-	ret = fs_read(&f_entry, data, *size);
+	ret = fs_read(&f_entry, buf, *size);
 	if (ret < 0) {
 		LOG_ERR("Read file failed");
 		return ret;
@@ -196,11 +203,23 @@ int sd_card_open(char const *const filename, struct fs_file_t *f_seg_read_entry)
 	char abs_path_name[PATH_MAX_LEN + 1] = SD_ROOT_PATH;
 	size_t avilable_path_space = PATH_MAX_LEN - strlen(SD_ROOT_PATH);
 
+	if (sd_read_ongoing){
+		LOG_ERR("SD read is ongoing");
+		return -EPERM;
+	}
+
+	sd_read_ongoing = true;
+
 	if (!sd_init_success) {
 		return -ENODEV;
 	}
 
-	if ((strlen(abs_path_name)) > PATH_MAX_LEN) {
+	if (strlen(filename) > CONFIG_FS_FATFS_MAX_LFN) {
+		LOG_ERR("Filename is too long");
+		return -ENAMETOOLONG;
+	}
+
+	if ((strlen(abs_path_name) + strlen(filename)) > PATH_MAX_LEN) {
 		LOG_ERR("Filepath is too long");
 		return -EINVAL;
 	}
@@ -209,27 +228,22 @@ int sd_card_open(char const *const filename, struct fs_file_t *f_seg_read_entry)
 
 	LOG_INF("abs path name:\t%s", abs_path_name);
 
-	if (strlen(filename) > CONFIG_FS_FATFS_MAX_LFN) {
-		LOG_ERR("Filename is too long");
-		return -ENAMETOOLONG;
-	}
-
 	fs_file_t_init(f_seg_read_entry);
 
 	ret = fs_open(f_seg_read_entry, abs_path_name, FS_O_READ);
 	if (ret) {
-		LOG_ERR("Open file failed");
+		LOG_ERR("Open file failed: %d", ret);
 		return ret;
 	}
 
 	return 0;
 }
 
-int sd_card_read(char *const data, size_t *size, struct fs_file_t *f_seg_read_entry)
+int sd_card_read(char *buf, size_t *size, struct fs_file_t *f_seg_read_entry)
 {
 	int ret;
 
-	ret = fs_read(f_seg_read_entry, data, *size);
+	ret = fs_read(f_seg_read_entry, buf, *size);
 	if (ret < 0) {
 		LOG_ERR("Read file failed");
 		return ret;
@@ -249,6 +263,8 @@ int sd_card_close(struct fs_file_t *f_seg_read_entry)
 		LOG_ERR("Close file failed");
 		return ret;
 	}
+
+	sd_read_ongoing = false;
 
 	return 0;
 }
